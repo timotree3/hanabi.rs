@@ -13,6 +13,7 @@ const COLORS: [Color; 5] = ["blue", "red", "yellow", "white", "green"];
 pub type Value = u32;
 // list of (value, count) pairs
 const VALUE_COUNTS : [(Value, u32); 5] = [(1, 3), (2, 2), (3, 2), (4, 2), (5, 1)];
+const FINAL_VALUE : Value = 5;
 
 pub struct Card {
     pub color: Color,
@@ -40,56 +41,103 @@ impl Pile {
     pub fn take(&mut self, index: usize) -> Card {
         self.0.remove(index)
     }
+    pub fn top(&self) -> Option<&Card> {
+        self.0.last()
+    }
     pub fn shuffle(&mut self) {
         rand::thread_rng().shuffle(&mut self.0[..]);
     }
+    pub fn size(&self) -> usize {
+        self.0.len()
+    }
 }
 
-pub type Hand = Vec<Card>;
 pub type Player = u32;
 
+#[derive(Debug)]
+pub enum Hint {
+    Color,
+    Value,
+}
+
+// represents the choice a player made in a given turn
+#[derive(Debug)]
+pub enum TurnChoice {
+    Hint,
+    Discard(usize),
+    Play(usize),
+}
+
+// represents a turn taken in the game
+pub struct Turn<'a> {
+    pub player: &'a Player,
+    pub choice: &'a TurnChoice,
+}
+
+// represents possible settings for the game
 pub struct GameOptions {
     pub num_players: u32,
     pub hand_size: u32,
     // when hits 0, you cannot hint
-    pub total_hints: u32,
+    pub num_hints: u32,
     // when hits 0, you lose
-    pub total_lives: u32,
+    pub num_lives: u32,
 }
 
 // The state of a given player:  all other players may see this
+#[derive(Debug)]
 pub struct PlayerState {
-    hand: Hand,
+    // the player's actual hand
+    pub hand: Pile,
+    // represents what is common knowledge about the player's hand
+    // pub known: ,
 }
 
 // State of everything except the player's hands
-// Is completely common knowledge
+// Is all completely common knowledge
+#[derive(Debug)]
 pub struct BoardState {
-    pub deck: Pile,
+    deck: Pile,
     pub discard: Pile,
     pub fireworks: HashMap<Color, Pile>,
 
-    // // whose turn is it?
-    pub next: Player,
+    pub num_players: u32,
 
+    // which turn is it?
+    pub turn: u32,
+    // // whose turn is it?
+    pub player: Player,
+
+    pub hints_total: u32,
     pub hints_remaining: u32,
+    pub lives_total: u32,
     pub lives_remaining: u32,
     // only relevant when deck runs out
-    turns_remaining: u32,
-}
-
-// complete game state (known to nobody!)
-pub struct GameState {
-    pub player_states: HashMap<Player, PlayerState>,
-    pub board_state: BoardState,
+    deckless_turns_remaining: u32,
 }
 
 // complete game view of a given player
-pub struct GameStateView {
-    // not yet implemented
-    pub other_player_states: HashMap<Player, PlayerState>,
-    pub board_state: BoardState,
+// state will be borrowed GameState
+#[derive(Debug)]
+pub struct GameStateView<'a> {
+    // the player whose view it is
+    pub player: Player,
+    // what is known about their own hand
+    // pub known:
+    // the cards of the other players
+    pub other_player_states: HashMap<Player, &'a PlayerState>,
+    // board state
+    pub board: &'a BoardState,
 }
+
+// complete game state (known to nobody!)
+#[derive(Debug)]
+pub struct GameState {
+    pub player_states: HashMap<Player, PlayerState>,
+    pub board: BoardState,
+}
+
+pub type Score = u32;
 
 impl GameState {
     pub fn new(opts: GameOptions) -> GameState {
@@ -97,14 +145,12 @@ impl GameState {
 
         let mut player_states : HashMap<Player, PlayerState> = HashMap::new();
         for i in 0..opts.num_players {
-            let hand : Hand = (0..opts.hand_size)
-                .map(|i| {
+            let raw_hand = (0..opts.hand_size).map(|_| {
                     // we can assume the deck is big enough to draw initial hands
                     deck.draw().unwrap()
-                })
-                .collect::<Vec<_>>();
+                }).collect::<Vec<_>>();
             let state = PlayerState {
-                hand: hand,
+                hand: Pile(raw_hand),
             };
             player_states.insert(i,  state);
         }
@@ -119,15 +165,19 @@ impl GameState {
 
         GameState {
             player_states: player_states,
-            board_state: BoardState {
+            board: BoardState {
                 deck: deck,
                 fireworks: fireworks,
                 discard: Pile::new(),
-                next: 0,
-                hints_remaining: opts.total_hints,
-                lives_remaining: opts.total_lives,
-                // only relevant when deck runs out
-                turns_remaining: opts.num_players,
+                num_players: opts.num_players,
+                player: 0,
+                turn: 1,
+                hints_total: opts.num_hints,
+                hints_remaining: opts.num_hints,
+                lives_total: opts.num_lives,
+                lives_remaining: opts.num_lives,
+                // number of turns to play with deck length ran out
+                deckless_turns_remaining: opts.num_players + 1,
             }
         }
     }
@@ -137,8 +187,8 @@ impl GameState {
 
         for color in COLORS.iter() {
             for &(value, count) in VALUE_COUNTS.iter() {
-                for _ in 0..3 {
-                    deck.place(Card {color: color, value: 1});
+                for _ in 0..count {
+                    deck.place(Card {color: color, value: value});
                 }
             }
         };
@@ -146,29 +196,104 @@ impl GameState {
         println!("Created deck: {:?}", deck);
         deck
     }
-}
 
-enum Hint {
-    Color,
-    Value,
-}
+    pub fn get_players(&self) -> Vec<Player> {
+        (0..self.board.num_players).collect::<Vec<_>>()
+    }
 
-enum Turn {
-    Hint,
-    Discard,
-    Play,
-}
+    pub fn is_over(&self) -> bool {
+        // TODO: add condition that fireworks cannot be further completed?
+        (self.board.lives_remaining == 0) ||
+        (self.board.deckless_turns_remaining == 0)
+    }
 
-// Trait to implement for any valid Hanabi strategy
-pub trait Strategy {
-    fn decide(&mut self, &GameStateView) -> Turn;
-    fn update(&mut self, Turn);
-}
+    pub fn score(&self) -> Score {
+        let mut score = 0;
+        for (_, firework) in &self.board.fireworks {
+            score += firework.size();
+        }
+        score as u32
+    }
 
-pub fn simulate_symmetric(opts: GameOptions, strategy: &Strategy) {
-    let strategies = (0..opts.num_players).map(|_| { Box::new(strategy) }).collect();
-    simulate(opts, strategies)
-}
+    // get the game state view of a particular player
+    pub fn get_view(&self, player: Player) -> GameStateView {
+        let mut other_player_states = HashMap::new();
+        for (other_player, state) in &self.player_states {
+            if player != *other_player {
+                other_player_states.insert(player, state);
+            }
+        }
+        GameStateView {
+            player: player,
+            other_player_states: other_player_states,
+            board: &self.board,
+        }
+    }
 
-pub fn simulate(opts: GameOptions, strategies: Vec<Box<&Strategy>>) {
+    // takes a card from the player's hand, and replaces it if possible
+    fn take_from_hand(&mut self, index: usize) -> Card {
+        let ref mut hand = self.player_states.get_mut(&self.board.player).unwrap().hand;
+        let card = hand.take(index);
+        if let Some(new_card) = self.board.deck.draw() {
+            hand.place(new_card);
+        }
+        card
+    }
+
+    fn try_add_hint(&mut self) {
+        if self.board.hints_remaining < self.board.hints_total {
+            self.board.hints_remaining += 1;
+        }
+    }
+
+    fn process_choice(&mut self, choice: TurnChoice) {
+        match choice {
+            TurnChoice::Hint => {
+                assert!(self.board.hints_remaining > 0);
+                self.board.hints_remaining -= 1;
+                // TODO: actually inform player of values..
+                // nothing to update, really...
+                // TODO: manage common knowledge
+            }
+            TurnChoice::Discard(index) => {
+                let card = self.take_from_hand(index);
+                self.board.discard.place(card);
+
+                self.try_add_hint();
+            }
+            TurnChoice::Play(index) => {
+                let card = self.take_from_hand(index);
+                let mut firework_made = false;
+
+                {
+                    let ref mut firework = self.board.fireworks.get_mut(&card.color).unwrap();
+
+                    let playable = {
+                        let under_card = firework.top().unwrap();
+                        card.value == under_card.value + 1
+                    };
+
+                    if playable {
+                        firework_made = card.value == FINAL_VALUE;
+                        firework.place(card);
+                    } else {
+                        self.board.discard.place(card);
+                        self.board.lives_remaining -= 1;
+                    }
+                }
+
+                if firework_made {
+                    self.try_add_hint();
+                }
+            }
+        }
+
+        if self.board.deck.size() == 0 {
+            self.board.deckless_turns_remaining -= 1;
+        }
+        self.board.turn += 1;
+        self.board.player = (self.board.player + 1) % self.board.num_players;
+        assert_eq!((self.board.turn - 1) % self.board.num_players, self.board.player);
+
+    }
 }

@@ -1,20 +1,24 @@
 
 use rand::{self, Rng};
+use std::convert::From;
 use std::collections::HashSet;
 use std::collections::HashMap;
 use std::fmt;
+
+use info::*;
 
 /*
 * Type definitions
 */
 
 pub type Color = &'static str;
-const COLORS: [Color; 5] = ["blue", "red", "yellow", "white", "green"];
+pub const COLORS: [Color; 5] = ["blue", "red", "yellow", "white", "green"];
 
 pub type Value = u32;
 // list of (value, count) pairs
-const VALUE_COUNTS : [(Value, u32); 5] = [(1, 3), (2, 2), (3, 2), (4, 2), (5, 1)];
-const FINAL_VALUE : Value = 5;
+pub const VALUES : [Value; 5] = [1, 2, 3, 4, 5];
+pub const VALUE_COUNTS : [(Value, u32); 5] = [(1, 3), (2, 2), (3, 2), (4, 2), (5, 1)];
+pub const FINAL_VALUE : Value = 5;
 
 pub struct Card {
     pub color: Color,
@@ -27,22 +31,22 @@ impl fmt::Debug for Card {
 }
 
 #[derive(Debug)]
-pub struct Pile(Vec<Card>);
-// basically a stack of cards
-impl Pile {
-    pub fn new() -> Pile {
-        Pile(Vec::new())
+// basically a stack of cards, or card info
+pub struct Pile<T>(Vec<T>);
+impl <T> Pile<T> {
+    pub fn new() -> Pile<T> {
+        Pile(Vec::<T>::new())
     }
-    pub fn draw(&mut self) -> Option<Card> {
+    pub fn draw(&mut self) -> Option<T> {
         self.0.pop()
     }
-    pub fn place(&mut self, card: Card) {
-        self.0.push(card);
+    pub fn place(&mut self, item: T) {
+        self.0.push(item);
     }
-    pub fn take(&mut self, index: usize) -> Card {
+    pub fn take(&mut self, index: usize) -> T {
         self.0.remove(index)
     }
-    pub fn top(&self) -> Option<&Card> {
+    pub fn top(&self) -> Option<&T> {
         self.0.last()
     }
     pub fn shuffle(&mut self) {
@@ -52,6 +56,15 @@ impl Pile {
         self.0.len()
     }
 }
+impl <T> From<Vec<T>> for Pile<T> {
+    fn from(items: Vec<T>) -> Pile<T> {
+        Pile(items)
+    }
+}
+
+pub type Cards = Pile<Card>;
+
+pub type CardsInfo = Pile<CardInfo>;
 
 pub type Player = u32;
 
@@ -89,18 +102,18 @@ pub struct GameOptions {
 #[derive(Debug)]
 pub struct PlayerState {
     // the player's actual hand
-    pub hand: Pile,
+    pub hand: Cards,
     // represents what is common knowledge about the player's hand
-    // pub known: ,
+    pub info: CardsInfo,
 }
 
 // State of everything except the player's hands
 // Is all completely common knowledge
 #[derive(Debug)]
 pub struct BoardState {
-    deck: Pile,
-    pub discard: Pile,
-    pub fireworks: HashMap<Color, Pile>,
+    deck: Cards,
+    pub discard: Cards,
+    pub fireworks: HashMap<Color, Cards>,
 
     pub num_players: u32,
 
@@ -123,9 +136,9 @@ pub struct BoardState {
 pub struct GameStateView<'a> {
     // the player whose view it is
     pub player: Player,
-    // what is known about their own hand
-    // pub known:
-    // the cards of the other players
+    // what is known about their own hand (and thus common knowledge)
+    pub info: &'a CardsInfo,
+    // the cards of the other players, as well as the information they have
     pub other_player_states: HashMap<Player, &'a PlayerState>,
     // board state
     pub board: &'a BoardState,
@@ -150,18 +163,22 @@ impl GameState {
                     // we can assume the deck is big enough to draw initial hands
                     deck.draw().unwrap()
                 }).collect::<Vec<_>>();
+            let infos = (0..opts.hand_size).map(|_| {
+                CardInfo::new()
+            }).collect::<Vec<_>>();
             let state = PlayerState {
-                hand: Pile(raw_hand),
+                hand: Cards::from(raw_hand),
+                info: CardsInfo::from(infos),
             };
             player_states.insert(i,  state);
         }
 
-        let mut fireworks : HashMap<Color, Pile> = HashMap::new();
+        let mut fireworks : HashMap<Color, Cards> = HashMap::new();
         for color in COLORS.iter() {
-            let mut pile = Pile::new();
+            let mut firework = Cards::new();
             let card = Card { value: 0, color: color };
-            pile.place(card);
-            fireworks.insert(color, pile);
+            firework.place(card);
+            fireworks.insert(color, firework);
         }
 
         GameState {
@@ -169,7 +186,7 @@ impl GameState {
             board: BoardState {
                 deck: deck,
                 fireworks: fireworks,
-                discard: Pile::new(),
+                discard: Cards::new(),
                 num_players: opts.num_players,
                 player: 0,
                 turn: 1,
@@ -183,8 +200,8 @@ impl GameState {
         }
     }
 
-    fn make_deck() -> Pile {
-        let mut deck: Pile = Pile(Vec::new());
+    fn make_deck() -> Cards {
+        let mut deck: Cards = Cards::from(Vec::new());
 
         for color in COLORS.iter() {
             for &(value, count) in VALUE_COUNTS.iter() {
@@ -227,6 +244,7 @@ impl GameState {
         }
         GameStateView {
             player: player,
+            info: &self.player_states.get(&player).unwrap().info,
             other_player_states: other_player_states,
             board: &self.board,
         }
@@ -234,10 +252,12 @@ impl GameState {
 
     // takes a card from the player's hand, and replaces it if possible
     fn take_from_hand(&mut self, index: usize) -> Card {
-        let ref mut hand = self.player_states.get_mut(&self.board.player).unwrap().hand;
-        let card = hand.take(index);
+        let ref mut state = self.player_states.get_mut(&self.board.player).unwrap();
+        let card = state.hand.take(index);
+        state.info.take(index);
         if let Some(new_card) = self.board.deck.draw() {
-            hand.place(new_card);
+            state.hand.place(new_card);
+            state.info.place(CardInfo::new());
         }
         card
     }

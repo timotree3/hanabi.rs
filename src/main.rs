@@ -4,12 +4,15 @@ extern crate log;
 
 mod game;
 mod strategies;
+mod info;
 
 
 struct SimpleLogger;
 impl log::Log for SimpleLogger {
     fn enabled(&self, metadata: &log::LogMetadata) -> bool {
-        metadata.level() <= log::LogLevel::Debug
+        // metadata.level() <= log::LogLevel::Warn
+        metadata.level() <= log::LogLevel::Info
+        // metadata.level() <= log::LogLevel::Debug
     }
 
     fn log(&self, record: &log::LogRecord) {

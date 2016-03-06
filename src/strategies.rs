@@ -60,6 +60,7 @@ pub fn simulate<S: Strategy>(opts: &GameOptions, strategy: &S, n_trials: u32) ->
     average
 }
 
+// dummy, terrible strategy
 pub struct AlwaysPlay;
 impl Strategy for AlwaysPlay {
     type InternalState = ();

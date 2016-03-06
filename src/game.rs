@@ -1,12 +1,18 @@
-use rand::{thread_rng, Rng};
+use rand::{self, Rng};
 use std::collections::HashSet;
 use std::collections::HashMap;
 use std::fmt;
 
-// Type definitions
+/*
+* Type definitions
+*/
 
 pub type Color = &'static str;
-pub type Value = i32;
+const COLORS: [Color; 5] = ["blue", "red", "yellow", "white", "green"];
+
+pub type Value = u32;
+// list of (value, count) pairs
+const VALUE_COUNTS : [(Value, u32); 5] = [(1, 3), (2, 2), (3, 2), (4, 2), (5, 1)];
 
 pub struct Card {
     pub color: Color,
@@ -18,81 +24,151 @@ impl fmt::Debug for Card {
     }
 }
 
-pub type Pile = Vec<Card>;
+#[derive(Debug)]
+pub struct Pile(Vec<Card>);
+// basically a stack of cards
+impl Pile {
+    pub fn new() -> Pile {
+        Pile(Vec::new())
+    }
+    pub fn draw(&mut self) -> Option<Card> {
+        self.0.pop()
+    }
+    pub fn place(&mut self, card: Card) {
+        self.0.push(card);
+    }
+    pub fn take(&mut self, index: usize) -> Card {
+        self.0.remove(index)
+    }
+    pub fn shuffle(&mut self) {
+        rand::thread_rng().shuffle(&mut self.0[..]);
+    }
+}
+
 pub type Hand = Vec<Card>;
-pub type Player = i32;
+pub type Player = u32;
 
 pub struct GameOptions {
-    pub num_players: i32,
-    pub hand_size: i32,
-    pub total_hints: i32,
-    pub total_lives: i32,
+    pub num_players: u32,
+    pub hand_size: u32,
+    // when hits 0, you cannot hint
+    pub total_hints: u32,
+    // when hits 0, you lose
+    pub total_lives: u32,
 }
 
 // The state of a given player:  all other players may see this
-struct PlayerState {
+pub struct PlayerState {
     hand: Hand,
 }
 
-pub struct GameState {
+// State of everything except the player's hands
+// Is completely common knowledge
+pub struct BoardState {
     pub deck: Pile,
-    // pub players: PlayerState,
-    // pub discard: Pile,
-    // pub fireworks: HashMap<Color, Pile>,
+    pub discard: Pile,
+    pub fireworks: HashMap<Color, Pile>,
+
     // // whose turn is it?
-    // pub next: Player,
-    // pub hints_remaining: i32,
-    // pub lives_remaining: i32,
-    // // only relevant when deck runs out
-    // pub turns_remaining: i32,
+    pub next: Player,
+
+    pub hints_remaining: u32,
+    pub lives_remaining: u32,
+    // only relevant when deck runs out
+    turns_remaining: u32,
+}
+
+// complete game state (known to nobody!)
+pub struct GameState {
+    pub player_states: HashMap<Player, PlayerState>,
+    pub board_state: BoardState,
+}
+
+// complete game view of a given player
+pub struct GameStateView {
+    // not yet implemented
+    pub other_player_states: HashMap<Player, PlayerState>,
+    pub board_state: BoardState,
 }
 
 impl GameState {
     pub fn new(opts: GameOptions) -> GameState {
-        let deck = GameState::make_deck();
+        let mut deck = GameState::make_deck();
+
+        let mut player_states : HashMap<Player, PlayerState> = HashMap::new();
+        for i in 0..opts.num_players {
+            let hand : Hand = (0..opts.hand_size)
+                .map(|i| {
+                    // we can assume the deck is big enough to draw initial hands
+                    deck.draw().unwrap()
+                })
+                .collect::<Vec<_>>();
+            let state = PlayerState {
+                hand: hand,
+            };
+            player_states.insert(i,  state);
+        }
+
+        let mut fireworks : HashMap<Color, Pile> = HashMap::new();
+        for color in COLORS.iter() {
+            let mut pile = Pile::new();
+            let card = Card { value: 0, color: color };
+            pile.place(card);
+            fireworks.insert(color, pile);
+        }
+
         GameState {
-            deck: deck,
+            player_states: player_states,
+            board_state: BoardState {
+                deck: deck,
+                fireworks: fireworks,
+                discard: Pile::new(),
+                next: 0,
+                hints_remaining: opts.total_hints,
+                lives_remaining: opts.total_lives,
+                // only relevant when deck runs out
+                turns_remaining: opts.num_players,
+            }
         }
     }
 
     fn make_deck() -> Pile {
-        let mut deck: Pile = Vec::new();
+        let mut deck: Pile = Pile(Vec::new());
+
         for color in COLORS.iter() {
-            for (value, count) in VALUE_COUNTS.iter() {
-                for _ in 0..*count {
-                    deck.push(Card {color: color, value: *value});
+            for &(value, count) in VALUE_COUNTS.iter() {
+                for _ in 0..3 {
+                    deck.place(Card {color: color, value: 1});
                 }
             }
         };
-        thread_rng().shuffle(&mut deck[..]);
+        deck.shuffle();
         println!("Created deck: {:?}", deck);
         deck
     }
 }
 
-lazy_static! {
-    static ref COLORS: HashSet<Color> = {
-        vec!["blue", "red", "yellow", "white", "green"].into_iter().collect::<HashSet<_,_>>()
-    };
-    // map from value to count
-    static ref VALUE_COUNTS: HashMap<Value, i32> = {
-        let mut map = HashMap::new();
-        map.insert(1, 3);
-        map.insert(2, 2);
-        map.insert(3, 2);
-        map.insert(4, 2);
-        map.insert(5, 1);
-        map
-    };
+enum Hint {
+    Color,
+    Value,
 }
 
-fn validate_card(card: &Card) {
+enum Turn {
+    Hint,
+    Discard,
+    Play,
 }
 
-trait Strategy {
-    fn decide(&self) -> f64;
-    fn update(&self) -> f64;
+// Trait to implement for any valid Hanabi strategy
+pub trait Strategy {
+    fn decide(&mut self, &GameStateView) -> Turn;
+    fn update(&mut self, Turn);
 }
 
-fn simulate() {
+pub fn simulate_symmetric(opts: GameOptions, strategy: &Strategy) {
+    let strategies = (0..opts.num_players).map(|_| { Box::new(strategy) }).collect();
+    simulate(opts, strategies)
+}
+
+pub fn simulate(opts: GameOptions, strategies: Vec<Box<&Strategy>>) {
 }

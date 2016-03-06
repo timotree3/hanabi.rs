@@ -10,7 +10,7 @@ pub trait Strategy {
     fn update(&mut Self::InternalState, &Turn, &GameStateView);
 }
 
-pub fn simulate<S: Strategy>(opts: GameOptions, strategy: S) -> Score {
+pub fn simulate_once<S: Strategy>(opts: &GameOptions, strategy: &S) -> Score {
     let mut game = GameState::new(opts);
 
     let mut internal_states : HashMap<Player, S::InternalState> = HashMap::new();
@@ -27,7 +27,10 @@ pub fn simulate<S: Strategy>(opts: GameOptions, strategy: S) -> Score {
             let ref mut internal_state = internal_states.get_mut(&player).unwrap();
             S::decide(internal_state, &player, &game.get_view(player))
         };
-        println!("Player {:?} decided to {:?}", player, choice);
+
+        game.process_choice(&choice);
+
+        info!("Player {:?} decided to {:?}", player, choice);
         let turn = Turn {
             player: &player,
             choice: &choice,
@@ -40,9 +43,21 @@ pub fn simulate<S: Strategy>(opts: GameOptions, strategy: S) -> Score {
         }
 
         // TODO: do some stuff
-        println!("State: {:?}", game);
+        info!("State: {:?}", game);
     }
     game.score()
+}
+
+pub fn simulate<S: Strategy>(opts: &GameOptions, strategy: &S, n_trials: u32) -> f32 {
+    let mut total_score = 0;
+    for _ in 0..n_trials {
+        let score = simulate_once(&opts, strategy);
+        info!("Scored: {:?}", score);
+        total_score += score;
+    }
+    let average: f32 = (total_score as f32) / (n_trials as f32);
+    info!("Average score: {:?}", average);
+    average
 }
 
 pub struct AlwaysPlay;

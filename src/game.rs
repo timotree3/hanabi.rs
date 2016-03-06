@@ -1,3 +1,4 @@
+
 use rand::{self, Rng};
 use std::collections::HashSet;
 use std::collections::HashMap;
@@ -140,7 +141,7 @@ pub struct GameState {
 pub type Score = u32;
 
 impl GameState {
-    pub fn new(opts: GameOptions) -> GameState {
+    pub fn new(opts: &GameOptions) -> GameState {
         let mut deck = GameState::make_deck();
 
         let mut player_states : HashMap<Player, PlayerState> = HashMap::new();
@@ -193,7 +194,7 @@ impl GameState {
             }
         };
         deck.shuffle();
-        println!("Created deck: {:?}", deck);
+        info!("Created deck: {:?}", deck);
         deck
     }
 
@@ -210,7 +211,8 @@ impl GameState {
     pub fn score(&self) -> Score {
         let mut score = 0;
         for (_, firework) in &self.board.fireworks {
-            score += firework.size();
+            // subtract one to account for the 0 we pushed
+            score += firework.size() - 1;
         }
         score as u32
     }
@@ -246,8 +248,8 @@ impl GameState {
         }
     }
 
-    fn process_choice(&mut self, choice: TurnChoice) {
-        match choice {
+    pub fn process_choice(&mut self, choice: &TurnChoice) {
+        match *choice {
             TurnChoice::Hint => {
                 assert!(self.board.hints_remaining > 0);
                 self.board.hints_remaining -= 1;
@@ -263,6 +265,12 @@ impl GameState {
             }
             TurnChoice::Play(index) => {
                 let card = self.take_from_hand(index);
+
+                debug!(
+                    "Here!  Playing card at {}, which is {:?}",
+                    index, card
+                );
+
                 let mut firework_made = false;
 
                 {
@@ -279,6 +287,10 @@ impl GameState {
                     } else {
                         self.board.discard.place(card);
                         self.board.lives_remaining -= 1;
+                        debug!(
+                            "Removing a life! Lives remaining: {}",
+                            self.board.lives_remaining
+                        );
                     }
                 }
 

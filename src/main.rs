@@ -6,11 +6,13 @@ mod game;
 mod strategies;
 mod info;
 
+#[allow(unused_imports)]
+use log::LogLevel::{Trace, Debug, Info, Warn, Error};
 
 struct SimpleLogger;
 impl log::Log for SimpleLogger {
     fn enabled(&self, metadata: &log::LogMetadata) -> bool {
-        true
+        metadata.level() <= Debug
     }
 
     fn log(&self, record: &log::LogRecord) {
@@ -22,10 +24,9 @@ impl log::Log for SimpleLogger {
 
 fn main() {
     log::set_logger(|max_log_level| {
-        // Trace, Debug, Info, Warn, ...
-        max_log_level.set(log::LogLevelFilter::Info);
+        max_log_level.set(log::LogLevelFilter::Trace);
         Box::new(SimpleLogger)
-    });
+    }).unwrap();
 
     let opts = game::GameOptions {
         num_players: 4,

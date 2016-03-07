@@ -64,9 +64,10 @@ impl <T> From<Vec<T>> for Pile<T> {
 }
 impl <T> fmt::Display for Pile<T> where T: fmt::Display {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "[");
+        // surely doing unwraps is improper..
+        write!(f, "[").unwrap();
         for item in &self.0 {
-            write!(f, "{}, ", item);
+            write!(f, "{}, ", item).unwrap();
         }
         write!(f, "] ")
     }
@@ -179,6 +180,21 @@ impl PlayerState {
     }
 }
 
+fn new_deck() -> Cards {
+    let mut deck: Cards = Cards::from(Vec::new());
+
+    for color in COLORS.iter() {
+        for &(value, count) in VALUE_COUNTS.iter() {
+            for _ in 0..count {
+                deck.place(Card {color: color, value: value});
+            }
+        }
+    };
+    deck.shuffle();
+    info!("Created deck: {}", deck);
+    deck
+}
+
 // State of everything except the player's hands
 // Is all completely common knowledge
 #[derive(Debug)]
@@ -200,6 +216,65 @@ pub struct BoardState {
     pub lives_remaining: u32,
     // only relevant when deck runs out
     deckless_turns_remaining: u32,
+}
+impl BoardState {
+    pub fn new(opts: &GameOptions) -> BoardState {
+        let mut fireworks : HashMap<Color, Cards> = HashMap::new();
+        for color in COLORS.iter() {
+            let mut firework = Cards::new();
+            let card = Card { value: 0, color: color };
+            firework.place(card);
+            fireworks.insert(color, firework);
+        }
+
+        BoardState {
+            deck: new_deck(),
+            fireworks: fireworks,
+            discard: Cards::new(),
+            num_players: opts.num_players,
+            player: 0,
+            turn: 1,
+            hints_total: opts.num_hints,
+            hints_remaining: opts.num_hints,
+            lives_total: opts.num_lives,
+            lives_remaining: opts.num_lives,
+            // number of turns to play with deck length ran out
+            deckless_turns_remaining: opts.num_players + 1,
+        }
+    }
+
+    fn try_add_hint(&mut self) {
+        if self.hints_remaining < self.hints_total {
+            self.hints_remaining += 1;
+        }
+    }
+
+    // returns whether a card would place on a firework
+    pub fn is_playable(&self, card: &Card) -> bool {
+        let firework = self.fireworks.get(card.color).unwrap();
+        let under_card = firework.top().unwrap();
+        card.value == under_card.value + 1
+    }
+
+    pub fn get_players(&self) -> Vec<Player> {
+        (0..self.num_players).collect::<Vec<_>>()
+    }
+
+    pub fn score(&self) -> Score {
+        let mut score = 0;
+        for (_, firework) in &self.fireworks {
+            // subtract one to account for the 0 we pushed
+            score += firework.size() - 1;
+        }
+        score as u32
+    }
+
+    pub fn player_to_left(&self, player: &Player) -> Player {
+        (player + 1) % self.num_players
+    }
+    pub fn player_to_right(&self, player: &Player) -> Player {
+        (player - 1) % self.num_players
+    }
 }
 
 // complete game view of a given player
@@ -227,63 +302,27 @@ pub type Score = u32;
 
 impl GameState {
     pub fn new(opts: &GameOptions) -> GameState {
-        let mut deck = GameState::make_deck();
+        let mut board = BoardState::new(opts);
 
         let mut player_states : HashMap<Player, PlayerState> = HashMap::new();
         for i in 0..opts.num_players {
             let raw_hand = (0..opts.hand_size).map(|_| {
                     // we can assume the deck is big enough to draw initial hands
-                    deck.draw().unwrap()
+                    board.deck.draw().unwrap()
                 }).collect::<Vec<_>>();
             player_states.insert(
                 i,  PlayerState::new(Cards::from(raw_hand)),
             );
         }
 
-        let mut fireworks : HashMap<Color, Cards> = HashMap::new();
-        for color in COLORS.iter() {
-            let mut firework = Cards::new();
-            let card = Card { value: 0, color: color };
-            firework.place(card);
-            fireworks.insert(color, firework);
-        }
-
         GameState {
             player_states: player_states,
-            board: BoardState {
-                deck: deck,
-                fireworks: fireworks,
-                discard: Cards::new(),
-                num_players: opts.num_players,
-                player: 0,
-                turn: 1,
-                hints_total: opts.num_hints,
-                hints_remaining: opts.num_hints,
-                lives_total: opts.num_lives,
-                lives_remaining: opts.num_lives,
-                // number of turns to play with deck length ran out
-                deckless_turns_remaining: opts.num_players + 1,
-            }
+            board: board,
         }
-    }
-
-    fn make_deck() -> Cards {
-        let mut deck: Cards = Cards::from(Vec::new());
-
-        for color in COLORS.iter() {
-            for &(value, count) in VALUE_COUNTS.iter() {
-                for _ in 0..count {
-                    deck.place(Card {color: color, value: value});
-                }
-            }
-        };
-        deck.shuffle();
-        info!("Created deck: {}", deck);
-        deck
     }
 
     pub fn get_players(&self) -> Vec<Player> {
-        (0..self.board.num_players).collect::<Vec<_>>()
+        self.board.get_players()
     }
 
     pub fn is_over(&self) -> bool {
@@ -293,12 +332,7 @@ impl GameState {
     }
 
     pub fn score(&self) -> Score {
-        let mut score = 0;
-        for (_, firework) in &self.board.fireworks {
-            // subtract one to account for the 0 we pushed
-            score += firework.size() - 1;
-        }
-        score as u32
+        self.board.score()
     }
 
     // get the game state view of a particular player
@@ -322,68 +356,63 @@ impl GameState {
         let ref mut state = self.player_states.get_mut(&self.board.player).unwrap();
         let (card, _) = state.take(index);
         if let Some(new_card) = self.board.deck.draw() {
+            info!("Drew new card, {}", new_card);
             state.place(new_card);
         }
         card
     }
 
-    fn try_add_hint(&mut self) {
-        if self.board.hints_remaining < self.board.hints_total {
-            self.board.hints_remaining += 1;
-        }
-    }
-
     pub fn process_choice(&mut self, choice: &TurnChoice) {
         info!("Player {}'s move", self.board.player);
-        match *choice {
-            TurnChoice::Hint(ref hint) => {
-                assert!(self.board.hints_remaining > 0);
+        match choice {
+            &TurnChoice::Hint(ref hint) => {
+                assert!(self.board.hints_remaining > 0,
+                        "Tried to hint with no hints remaining");
                 self.board.hints_remaining -= 1;
                 info!("Hint to player {}, about {}", hint.player, hint.hinted);
+
+                assert!(self.board.player != hint.player,
+                        format!("Player {} gave a hint to himself", hint.player));
 
                 let ref mut state = self.player_states.get_mut(&hint.player).unwrap();
                 state.reveal(&hint.hinted);
             }
-            TurnChoice::Discard(index) => {
+            &TurnChoice::Discard(index) => {
                 let card = self.take_from_hand(index);
-                info!("Discard {}, which is {}", index, card);
+                info!("Discard card in position {}, which is {}", index, card);
                 self.board.discard.place(card);
 
-                self.try_add_hint();
+                self.board.try_add_hint();
             }
-            TurnChoice::Play(index) => {
+            &TurnChoice::Play(index) => {
                 let card = self.take_from_hand(index);
 
                 info!(
-                    "Playing card at {}, which is {}",
+                    "Playing card at position {}, which is {}",
                     index, card
                 );
 
                 let mut firework_made = false;
 
-                {
+                if self.board.is_playable(&card) {
                     let ref mut firework = self.board.fireworks.get_mut(&card.color).unwrap();
-
-                    let playable = {
-                        let under_card = firework.top().unwrap();
-                        card.value == under_card.value + 1
-                    };
-
-                    if playable {
-                        firework_made = card.value == FINAL_VALUE;
-                        firework.place(card);
-                    } else {
-                        self.board.discard.place(card);
-                        self.board.lives_remaining -= 1;
-                        info!(
-                            "Removing a life! Lives remaining: {}",
-                            self.board.lives_remaining
-                        );
+                    firework_made = card.value == FINAL_VALUE;
+                    info!("Successfully played {}!", card);
+                    if firework_made {
+                        info!("Firework complete for {}!", card.color);
                     }
+                    firework.place(card);
+                } else {
+                    self.board.discard.place(card);
+                    self.board.lives_remaining -= 1;
+                    info!(
+                        "Removing a life! Lives remaining: {}",
+                        self.board.lives_remaining
+                    );
                 }
 
                 if firework_made {
-                    self.try_add_hint();
+                    self.board.try_add_hint();
                 }
             }
         }
@@ -392,7 +421,10 @@ impl GameState {
             self.board.deckless_turns_remaining -= 1;
         }
         self.board.turn += 1;
-        self.board.player = (self.board.player + 1) % self.board.num_players;
+        self.board.player = {
+            let cur = self.board.player;
+            self.board.player_to_left(&cur)
+        };
         assert_eq!((self.board.turn - 1) % self.board.num_players, self.board.player);
 
     }

@@ -99,7 +99,7 @@ impl Strategy for RandomStrategy {
     fn initialize(_: &Player, _: &GameStateView) -> () {
         ()
     }
-    fn decide(_: &mut (), _: &Player, view: &GameStateView) -> TurnChoice {
+    fn decide(_: &mut (), me: &Player, view: &GameStateView) -> TurnChoice {
         let p = rand::random::<f64>();
         if p < 0.4 {
             if view.board.hints_remaining > 0 {
@@ -112,7 +112,7 @@ impl Strategy for RandomStrategy {
                     }
                 };
                 TurnChoice::Hint(Hint {
-                    player: 0,
+                    player: view.board.player_to_left(&me),
                     hinted: hinted,
                 })
             } else {

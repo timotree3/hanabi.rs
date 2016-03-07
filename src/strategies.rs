@@ -1,5 +1,6 @@
 use game::*;
 use std::collections::HashMap;
+use rand::{self, Rng};
 
 // Trait to implement for any valid Hanabi strategy
 // State management is done by the simulator, to avoid cheating
@@ -10,7 +11,7 @@ pub trait Strategy {
     fn update(&mut Self::InternalState, &Turn, &GameStateView);
 }
 
-pub fn simulate_once<S: Strategy>(opts: &GameOptions, strategy: &S) -> Score {
+pub fn simulate_once<S: Strategy>(opts: &GameOptions, _: &S) -> Score {
     let mut game = GameState::new(opts);
 
     let mut internal_states : HashMap<Player, S::InternalState> = HashMap::new();
@@ -22,6 +23,7 @@ pub fn simulate_once<S: Strategy>(opts: &GameOptions, strategy: &S) -> Score {
     }
 
     while !game.is_over() {
+        debug!("Turn {}", game.board.turn);
         let player = game.board.player;
         let choice = {
             let ref mut internal_state = internal_states.get_mut(&player).unwrap();
@@ -30,7 +32,6 @@ pub fn simulate_once<S: Strategy>(opts: &GameOptions, strategy: &S) -> Score {
 
         game.process_choice(&choice);
 
-        info!("Player {:?} decided to {:?}", player, choice);
         let turn = Turn {
             player: &player,
             choice: &choice,
@@ -43,7 +44,7 @@ pub fn simulate_once<S: Strategy>(opts: &GameOptions, strategy: &S) -> Score {
         }
 
         // TODO: do some stuff
-        info!("State: {:?}", game);
+        debug!("State: {:?}", game);
     }
     game.score()
 }
@@ -61,15 +62,68 @@ pub fn simulate<S: Strategy>(opts: &GameOptions, strategy: &S, n_trials: u32) ->
 }
 
 // dummy, terrible strategy
+#[allow(dead_code)]
 pub struct AlwaysPlay;
 impl Strategy for AlwaysPlay {
     type InternalState = ();
-    fn initialize(player: &Player, view: &GameStateView) -> () {
+    fn initialize(_: &Player, _: &GameStateView) -> () {
         ()
     }
-    fn decide(_: &mut (), player: &Player, view: &GameStateView) -> TurnChoice {
+    fn decide(_: &mut (), _: &Player, _: &GameStateView) -> TurnChoice {
         TurnChoice::Play(0)
     }
-    fn update(_: &mut (), turn: &Turn, view: &GameStateView) {
+    fn update(_: &mut (), _: &Turn, _: &GameStateView) {
+    }
+}
+
+// dummy, terrible strategy
+#[allow(dead_code)]
+pub struct AlwaysDiscard;
+impl Strategy for AlwaysDiscard {
+    type InternalState = ();
+    fn initialize(_: &Player, _: &GameStateView) -> () {
+        ()
+    }
+    fn decide(_: &mut (), _: &Player, _: &GameStateView) -> TurnChoice {
+        TurnChoice::Discard(0)
+    }
+    fn update(_: &mut (), _: &Turn, _: &GameStateView) {
+    }
+}
+
+// dummy, terrible strategy
+#[allow(dead_code)]
+pub struct RandomStrategy;
+impl Strategy for RandomStrategy {
+    type InternalState = ();
+    fn initialize(_: &Player, _: &GameStateView) -> () {
+        ()
+    }
+    fn decide(_: &mut (), _: &Player, view: &GameStateView) -> TurnChoice {
+        let p = rand::random::<f64>();
+        if p < 0.4 {
+            if view.board.hints_remaining > 0 {
+                let hinted = {
+                    if rand::random() {
+                        // hint a color
+                        Hinted::Color(rand::thread_rng().choose(&COLORS).unwrap())
+                    } else {
+                        Hinted::Value(*rand::thread_rng().choose(&VALUES).unwrap())
+                    }
+                };
+                TurnChoice::Hint(Hint {
+                    player: 0,
+                    hinted: hinted,
+                })
+            } else {
+                TurnChoice::Discard(0)
+            }
+        } else if p < 0.8 {
+            TurnChoice::Discard(0)
+        } else {
+            TurnChoice::Play(0)
+        }
+    }
+    fn update(_: &mut (), _: &Turn, _: &GameStateView) {
     }
 }

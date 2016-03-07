@@ -1,7 +1,6 @@
 
 use rand::{self, Rng};
 use std::convert::From;
-use std::collections::HashSet;
 use std::collections::HashMap;
 use std::fmt;
 
@@ -20,13 +19,15 @@ pub const VALUES : [Value; 5] = [1, 2, 3, 4, 5];
 pub const VALUE_COUNTS : [(Value, u32); 5] = [(1, 3), (2, 2), (3, 2), (4, 2), (5, 1)];
 pub const FINAL_VALUE : Value = 5;
 
+#[derive(Debug)]
 pub struct Card {
     pub color: Color,
     pub value: Value,
 }
-impl fmt::Debug for Card {
+impl fmt::Display for Card {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} {}", self.color, self.value)
+        let colorchar = self.color.chars().next().unwrap();
+        write!(f, "{}{}", colorchar, self.value)
     }
 }
 
@@ -61,6 +62,15 @@ impl <T> From<Vec<T>> for Pile<T> {
         Pile(items)
     }
 }
+impl <T> fmt::Display for Pile<T> where T: fmt::Display {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "[");
+        for item in &self.0 {
+            write!(f, "{}, ", item);
+        }
+        write!(f, "] ")
+    }
+}
 
 pub type Cards = Pile<Card>;
 
@@ -69,15 +79,29 @@ pub type CardsInfo = Pile<CardInfo>;
 pub type Player = u32;
 
 #[derive(Debug)]
-pub enum Hint {
-    Color,
-    Value,
+pub enum Hinted {
+    Color(Color),
+    Value(Value),
+}
+impl fmt::Display for Hinted {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &Hinted::Color(color) => { write!(f, "{}", color) }
+            &Hinted::Value(value) => { write!(f, "{}", value) }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Hint {
+    pub player: Player,
+    pub hinted: Hinted,
 }
 
 // represents the choice a player made in a given turn
 #[derive(Debug)]
 pub enum TurnChoice {
-    Hint,
+    Hint(Hint),
     Discard(usize),
     Play(usize),
 }
@@ -102,9 +126,57 @@ pub struct GameOptions {
 #[derive(Debug)]
 pub struct PlayerState {
     // the player's actual hand
-    pub hand: Cards,
+    hand: Cards,
     // represents what is common knowledge about the player's hand
-    pub info: CardsInfo,
+    info: CardsInfo,
+}
+impl PlayerState {
+    pub fn new(hand: Cards) -> PlayerState {
+        let infos = (0..hand.size()).map(|_| {
+            CardInfo::new()
+        }).collect::<Vec<_>>();
+        PlayerState {
+            hand: hand,
+            info: CardsInfo::from(infos),
+        }
+    }
+
+    pub fn take(&mut self, index: usize) -> (Card, CardInfo) {
+        let card = self.hand.take(index);
+        let info = self.info.take(index);
+        (card, info)
+    }
+
+    pub fn place(&mut self, card: Card) {
+        self.hand.place(card);
+        self.info.place(CardInfo::new());
+    }
+
+    pub fn reveal(&mut self, hinted: &Hinted) {
+        match hinted {
+            &Hinted::Color(ref color) => {
+                let mut i = 0;
+                for card in &self.hand.0 {
+                    self.info.0[i].color_info.mark(
+                        color,
+                        card.color == *color
+                    );
+                    i += 1;
+                }
+            }
+            &Hinted::Value(ref value) => {
+                let mut i = 0;
+                for card in &self.hand.0 {
+                    self.info.0[i].value_info.mark(
+                        value,
+                        card.value == *value
+                    );
+                    i += 1;
+                }
+            }
+
+        }
+    }
 }
 
 // State of everything except the player's hands
@@ -163,14 +235,9 @@ impl GameState {
                     // we can assume the deck is big enough to draw initial hands
                     deck.draw().unwrap()
                 }).collect::<Vec<_>>();
-            let infos = (0..opts.hand_size).map(|_| {
-                CardInfo::new()
-            }).collect::<Vec<_>>();
-            let state = PlayerState {
-                hand: Cards::from(raw_hand),
-                info: CardsInfo::from(infos),
-            };
-            player_states.insert(i,  state);
+            player_states.insert(
+                i,  PlayerState::new(Cards::from(raw_hand)),
+            );
         }
 
         let mut fireworks : HashMap<Color, Cards> = HashMap::new();
@@ -211,7 +278,7 @@ impl GameState {
             }
         };
         deck.shuffle();
-        info!("Created deck: {:?}", deck);
+        info!("Created deck: {}", deck);
         deck
     }
 
@@ -253,11 +320,9 @@ impl GameState {
     // takes a card from the player's hand, and replaces it if possible
     fn take_from_hand(&mut self, index: usize) -> Card {
         let ref mut state = self.player_states.get_mut(&self.board.player).unwrap();
-        let card = state.hand.take(index);
-        state.info.take(index);
+        let (card, _) = state.take(index);
         if let Some(new_card) = self.board.deck.draw() {
-            state.hand.place(new_card);
-            state.info.place(CardInfo::new());
+            state.place(new_card);
         }
         card
     }
@@ -269,16 +334,19 @@ impl GameState {
     }
 
     pub fn process_choice(&mut self, choice: &TurnChoice) {
+        info!("Player {}'s move", self.board.player);
         match *choice {
-            TurnChoice::Hint => {
+            TurnChoice::Hint(ref hint) => {
                 assert!(self.board.hints_remaining > 0);
                 self.board.hints_remaining -= 1;
-                // TODO: actually inform player of values..
-                // nothing to update, really...
-                // TODO: manage common knowledge
+                info!("Hint to player {}, about {}", hint.player, hint.hinted);
+
+                let ref mut state = self.player_states.get_mut(&hint.player).unwrap();
+                state.reveal(&hint.hinted);
             }
             TurnChoice::Discard(index) => {
                 let card = self.take_from_hand(index);
+                info!("Discard {}, which is {}", index, card);
                 self.board.discard.place(card);
 
                 self.try_add_hint();
@@ -286,8 +354,8 @@ impl GameState {
             TurnChoice::Play(index) => {
                 let card = self.take_from_hand(index);
 
-                debug!(
-                    "Here!  Playing card at {}, which is {:?}",
+                info!(
+                    "Playing card at {}, which is {}",
                     index, card
                 );
 
@@ -307,7 +375,7 @@ impl GameState {
                     } else {
                         self.board.discard.place(card);
                         self.board.lives_remaining -= 1;
-                        debug!(
+                        info!(
                             "Removing a life! Lives remaining: {}",
                             self.board.lives_remaining
                         );

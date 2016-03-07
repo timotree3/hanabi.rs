@@ -5,7 +5,7 @@ use std::hash::Hash;
 use game::*;
 
 // Represents a bit of information about T
-trait Info<T> where T: Hash + Eq + Clone {
+pub trait Info<T> where T: Hash + Eq + Clone {
     // get all a-priori possibilities
     fn get_possibilities() -> Vec<T>;
 
@@ -41,6 +41,14 @@ trait Info<T> where T: Hash + Eq + Clone {
 
     fn mark_false(&mut self, value: &T) {
         self.get_mut_possibility_map().insert(value.clone(), false);
+    }
+
+    fn mark(&mut self, value: &T, info: bool) {
+        if info {
+            self.mark_true(value);
+        } else {
+            self.mark_false(value);
+        }
     }
 }
 

@@ -80,6 +80,64 @@ pub type CardsInfo = Pile<CardInfo>;
 pub type Player = u32;
 
 #[derive(Debug)]
+pub struct Firework {
+    pub color: Color,
+    pub cards: Cards,
+}
+impl Firework {
+    fn new(color: Color) -> Firework {
+        let mut cards = Cards::new();
+        // have a 0, so it's easier to implement
+        let card = Card { value: 0, color: color };
+        cards.place(card);
+        Firework {
+            color: color,
+            cards: cards,
+        }
+    }
+
+    fn desired_value(&self) -> Option<Value> {
+        let top_value = self.cards.top().unwrap().value;
+        if top_value == FINAL_VALUE {
+            None
+        } else {
+            Some(top_value + 1)
+        }
+    }
+
+    fn score(&self) -> usize {
+        // subtract one to account for the 0 we pushed
+        self.cards.size() - 1
+    }
+
+    fn complete(&self) -> bool {
+        self.desired_value() == None
+    }
+
+    fn place(&mut self, card: Card) {
+        assert!(
+            card.color == self.color,
+            "Attempted to place card on firework of wrong color!"
+        );
+        assert!(
+            Some(card.value) == self.desired_value(),
+            "Attempted to place card of wrong value on firework!"
+        );
+
+        self.cards.place(card);
+    }
+}
+impl fmt::Display for Firework {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(value) = self.desired_value() {
+            write!(f, "{} firework at {}", self.color, value)
+        } else {
+            write!(f, "{} firework complete!", self.color)
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum Hinted {
     Color(Color),
     Value(Value),
@@ -201,7 +259,7 @@ fn new_deck() -> Cards {
 pub struct BoardState {
     deck: Cards,
     pub discard: Cards,
-    pub fireworks: HashMap<Color, Cards>,
+    pub fireworks: HashMap<Color, Firework>,
 
     pub num_players: u32,
 
@@ -214,17 +272,16 @@ pub struct BoardState {
     pub hints_remaining: u32,
     pub lives_total: u32,
     pub lives_remaining: u32,
+    // TODO:
+    // pub turn_history: Vec<TurnChoice>,
     // only relevant when deck runs out
     deckless_turns_remaining: u32,
 }
 impl BoardState {
     pub fn new(opts: &GameOptions) -> BoardState {
-        let mut fireworks : HashMap<Color, Cards> = HashMap::new();
+        let mut fireworks : HashMap<Color, Firework> = HashMap::new();
         for color in COLORS.iter() {
-            let mut firework = Cards::new();
-            let card = Card { value: 0, color: color };
-            firework.place(card);
-            fireworks.insert(color, firework);
+            fireworks.insert(color, Firework::new(color));
         }
 
         BoardState {
@@ -252,8 +309,7 @@ impl BoardState {
     // returns whether a card would place on a firework
     pub fn is_playable(&self, card: &Card) -> bool {
         let firework = self.fireworks.get(card.color).unwrap();
-        let under_card = firework.top().unwrap();
-        card.value == under_card.value + 1
+        Some(card.value) == firework.desired_value()
     }
 
     pub fn get_players(&self) -> Vec<Player> {
@@ -263,8 +319,7 @@ impl BoardState {
     pub fn score(&self) -> Score {
         let mut score = 0;
         for (_, firework) in &self.fireworks {
-            // subtract one to account for the 0 we pushed
-            score += firework.size() - 1;
+            score += firework.score();
         }
         score as u32
     }

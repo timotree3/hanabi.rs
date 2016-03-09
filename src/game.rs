@@ -64,12 +64,12 @@ impl <T> From<Vec<T>> for Pile<T> {
 }
 impl <T> fmt::Display for Pile<T> where T: fmt::Display {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // surely doing unwraps is improper..
-        write!(f, "[").unwrap();
+        try!(f.write_str("["));
         for item in &self.0 {
-            write!(f, "{}, ", item).unwrap();
+            try!(f.write_str(&format!("{}, ", item)));
         }
-        write!(f, "] ")
+        try!(f.write_str(""));
+        Ok(())
     }
 }
 
@@ -96,12 +96,15 @@ impl Firework {
         }
     }
 
+    fn top_value(&self) -> Value {
+        self.cards.top().unwrap().value
+    }
+
     fn desired_value(&self) -> Option<Value> {
-        let top_value = self.cards.top().unwrap().value;
-        if top_value == FINAL_VALUE {
+        if self.complete() {
             None
         } else {
-            Some(top_value + 1)
+            Some(self.top_value() + 1)
         }
     }
 
@@ -111,7 +114,7 @@ impl Firework {
     }
 
     fn complete(&self) -> bool {
-        self.desired_value() == None
+        self.top_value() == FINAL_VALUE
     }
 
     fn place(&mut self, card: Card) {
@@ -129,10 +132,10 @@ impl Firework {
 }
 impl fmt::Display for Firework {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(value) = self.desired_value() {
-            write!(f, "{} firework at {}", self.color, value)
-        } else {
+        if self.complete() {
             write!(f, "{} firework complete!", self.color)
+        } else {
+            write!(f, "{} firework at {}", self.color, self.top_value())
         }
     }
 }
@@ -188,6 +191,19 @@ pub struct PlayerState {
     hand: Cards,
     // represents what is common knowledge about the player's hand
     info: CardsInfo,
+}
+impl fmt::Display for PlayerState {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        try!(f.write_str("hand:    "));
+
+        let mut i = 0;
+        for card in &self.hand.0 {
+            let info : &CardInfo = &self.info.0[i];
+            try!(f.write_str(&format!("{} =? {: <15} ", card, info)));
+            i += 1;
+        }
+        Ok(())
+    }
 }
 impl PlayerState {
     pub fn new(hand: Cards) -> PlayerState {
@@ -275,7 +291,7 @@ pub struct BoardState {
     // TODO:
     // pub turn_history: Vec<TurnChoice>,
     // only relevant when deck runs out
-    deckless_turns_remaining: u32,
+    pub deckless_turns_remaining: u32,
 }
 impl BoardState {
     pub fn new(opts: &GameOptions) -> BoardState {
@@ -324,11 +340,44 @@ impl BoardState {
         score as u32
     }
 
+    pub fn deck_size(&self) -> usize {
+        self.deck.size()
+    }
+
     pub fn player_to_left(&self, player: &Player) -> Player {
         (player + 1) % self.num_players
     }
     pub fn player_to_right(&self, player: &Player) -> Player {
         (player - 1) % self.num_players
+    }
+}
+impl fmt::Display for BoardState {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        try!(f.write_str(&format!(
+            "Turn {} (Player {}'s turn):\n", self.turn, self.player
+        )));
+        let deck_size = self.deck_size();
+        try!(f.write_str(&format!(
+            "{} cards remaining in deck\n", deck_size
+        )));
+        if deck_size == 0 {
+            try!(f.write_str(&format!(
+                "Deck is empty.  {} turns remaining in game\n", self.deckless_turns_remaining
+            )));
+        }
+        try!(f.write_str(&format!(
+            "{}/{} hints remaining\n", self.hints_remaining, self.hints_total
+        )));
+        try!(f.write_str(&format!(
+            "{}/{} lives remaining\n", self.lives_remaining, self.lives_total
+        )));
+        try!(f.write_str("Fireworks:\n"));
+        for (_, firework) in &self.fireworks {
+            try!(f.write_str(&format!("  {}\n", firework)));
+        }
+        //  discard: Cards::new(),
+
+        Ok(())
     }
 }
 
@@ -351,6 +400,22 @@ pub struct GameStateView<'a> {
 pub struct GameState {
     pub player_states: HashMap<Player, PlayerState>,
     pub board: BoardState,
+}
+impl fmt::Display for GameState {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        try!(f.write_str("==========================\n"));
+        try!(f.write_str("Hands:\n"));
+        try!(f.write_str("==========================\n"));
+        for player in 0..self.board.num_players {
+            let state = &self.player_states.get(&player).unwrap();
+            try!(f.write_str(&format!("player {} {}\n", player, state)));
+        }
+        try!(f.write_str("==========================\n"));
+        try!(f.write_str("Board:\n"));
+        try!(f.write_str("==========================\n"));
+        try!(f.write_str(&format!("{}", self.board)));
+        Ok(())
+    }
 }
 
 pub type Score = u32;

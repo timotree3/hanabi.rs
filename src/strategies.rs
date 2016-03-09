@@ -44,7 +44,7 @@ pub fn simulate_once<S: Strategy>(opts: &GameOptions, _: &S) -> Score {
         }
 
         // TODO: do some stuff
-        debug!("State: {:?}", game);
+        debug!("State:\n{}", game);
     }
     game.score()
 }

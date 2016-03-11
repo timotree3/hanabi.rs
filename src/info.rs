@@ -28,7 +28,8 @@ pub trait Info<T> where T: Hash + Eq + Clone {
     }
 
     fn is_possible(&self, value: &T) -> bool {
-        self.get_possibility_map().contains_key(value)
+        // self.get_possibility_map().contains_key(value)
+        *self.get_possibility_map().get(value).unwrap()
     }
 
     fn initialize() -> HashMap<T, bool> {
@@ -131,15 +132,19 @@ impl CardInfo {
 impl fmt::Display for CardInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut string = String::new();
-        for color in &self.color_info.get_possibilities() {
-            let colorchar = color.chars().next().unwrap();
-            string.push(colorchar);
+        for color in &COLORS {
+            if self.color_info.is_possible(color) {
+                let colorchar = color.chars().next().unwrap();
+                string.push(colorchar);
+            }
         }
         // while string.len() < COLORS.len() + 1 {
         string.push(' ');
         //}
-        for value in &self.value_info.get_possibilities() {
-            string.push_str(&format!("{}", value));
+        for value in &VALUES {
+            if self.value_info.is_possible(value) {
+                string.push_str(&format!("{}", value));
+            }
         }
         f.pad(&string)
     }

@@ -182,6 +182,8 @@ pub struct GameOptions {
     pub num_hints: u32,
     // when hits 0, you lose
     pub num_lives: u32,
+    // TODO:
+    // pub allow_empty_hints: bool,
 }
 
 // The state of a given player:  all other players may see this

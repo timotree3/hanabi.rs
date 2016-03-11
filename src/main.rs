@@ -3,7 +3,10 @@ extern crate rand;
 extern crate log;
 
 mod game;
-mod strategies;
+mod simulator;
+mod strategies {
+    pub mod examples;
+}
 mod info;
 
 #[allow(unused_imports)]
@@ -35,7 +38,23 @@ fn main() {
         num_lives: 3,
     };
     let n = 1;
-    // strategies::simulate(&opts, &strategies::AlwaysDiscard, n);
-    // strategies::simulate(&opts, &strategies::AlwaysPlay, n);
-    strategies::simulate(&opts, &strategies::RandomStrategy, n);
+    // simulator::simulate(&opts, &strategies::examples::AlwaysDiscard, n);
+    // simulator::simulate_symmetric(&opts, strategies::examples::AlwaysPlayConfig, n);
+    // simulator::simulate(
+    //     &opts,
+    //     &vec![
+    //         Box::new(strategies::examples::AlwaysPlayConfig),
+    //         Box::new(strategies::examples::AlwaysPlayConfig),
+    //         Box::new(strategies::examples::AlwaysPlayConfig),
+    //         Box::new(strategies::examples::AlwaysPlayConfig),
+    //     ],
+    //     n);
+    simulator::simulate_symmetric(
+        &opts,
+        strategies::examples::RandomStrategyConfig {
+            hint_probability: 0.4,
+            play_probability: 0.2,
+        },
+        n
+    );
 }

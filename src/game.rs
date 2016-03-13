@@ -377,6 +377,29 @@ impl BoardState {
         }
     }
 
+    // best possible value we can get for firework of that color,
+    // based on looking at discard + fireworks
+    pub fn highest_attainable(&self, color: &Color) -> Value {
+        let firework = self.fireworks.get(color).unwrap();
+        if firework.complete() {
+            return FINAL_VALUE;
+        }
+        let desired = firework.desired_value().unwrap();
+
+        for value in VALUES.iter() {
+            if *value < desired {
+                // already have these cards
+                continue
+            }
+            let needed_card = Card::new(color, value.clone());
+            if self.discard.has_all(&needed_card) {
+                // already discarded all of these
+                return value - 1;
+            }
+        }
+        return FINAL_VALUE;
+    }
+
     // is never going to play, based on discard + fireworks
     pub fn is_unplayable(&self, card: &Card) -> bool {
         let firework = self.fireworks.get(card.color).unwrap();
@@ -387,24 +410,26 @@ impl BoardState {
             if card.value < desired {
                 true
             } else {
-                let mut playable = true;
-                for value in VALUES.iter() {
-                    if *value < desired {
-                        // already have these cards
-                        continue
-                    } else if *value > card.value {
-                        // don't care about these cards
-                        break
-                    } else {
-                        // need these cards
-                        let needed_card = Card::new(card.color, value.clone());
-                        if self.discard.has_all(&needed_card) {
-                            // already discarded all of these
-                            playable = false;
-                        }
-                    }
+                card.value > self.highest_attainable(&card.color)
+            }
+        }
+    }
+
+    // cannot be discarded without sacrificing score, based on discard + fireworks
+    pub fn is_undiscardable(&self, card: &Card) -> bool {
+        let firework = self.fireworks.get(card.color).unwrap();
+        if firework.complete() {
+            false
+        } else {
+            let desired = firework.desired_value().unwrap();
+            if card.value < desired {
+                false
+            } else {
+                if card.value > self.highest_attainable(&card.color) {
+                    false
+                } else {
+                    self.discard.remaining(&card) == 1
                 }
-                playable
             }
         }
     }

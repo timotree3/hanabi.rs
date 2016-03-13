@@ -4,11 +4,11 @@ use std::collections::HashMap;
 // Trait to implement for any valid Hanabi strategy
 // State management is done by the simulator, to avoid cheating
 pub trait Strategy {
-    fn decide(&mut self, &Player, &GameStateView) -> TurnChoice;
+    fn decide(&mut self, &GameStateView) -> TurnChoice;
     fn update(&mut self, &Turn, &GameStateView);
 }
 pub trait StrategyConfig {
-    fn initialize(&self, &Player, &GameStateView) -> Box<Strategy>;
+    fn initialize(&self, Player, &GameStateView) -> Box<Strategy>;
 }
 
 pub fn simulate_once<'a>(opts: &GameOptions, strat_configs: &Vec<Box<StrategyConfig + 'a>>) -> Score {
@@ -21,7 +21,7 @@ pub fn simulate_once<'a>(opts: &GameOptions, strat_configs: &Vec<Box<StrategyCon
     for player in game.get_players() {
         strategies.insert(
             player,
-            (*strat_configs[i]).initialize(&player, &game.get_view(player)),
+            (*strat_configs[i]).initialize(player.clone(), &game.get_view(player)),
         );
         i += 1;
     }
@@ -31,7 +31,7 @@ pub fn simulate_once<'a>(opts: &GameOptions, strat_configs: &Vec<Box<StrategyCon
         let player = game.board.player;
         let choice = {
             let mut strategy = strategies.get_mut(&player).unwrap();
-            strategy.decide(&player, &game.get_view(player))
+            strategy.decide(&game.get_view(player))
         };
 
         game.process_choice(&choice);

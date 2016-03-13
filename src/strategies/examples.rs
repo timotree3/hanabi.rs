@@ -7,13 +7,13 @@ use rand::{self, Rng};
 #[derive(Clone)]
 pub struct AlwaysPlayConfig;
 impl StrategyConfig for AlwaysPlayConfig {
-    fn initialize(&self, _: &Player, _: &GameStateView) -> Box<Strategy> {
+    fn initialize(&self, _: Player, _: &GameStateView) -> Box<Strategy> {
         Box::new(AlwaysPlay)
     }
 }
 pub struct AlwaysPlay;
 impl Strategy for AlwaysPlay {
-    fn decide(&mut self, _: &Player, _: &GameStateView) -> TurnChoice {
+    fn decide(&mut self, _: &GameStateView) -> TurnChoice {
         TurnChoice::Play(0)
     }
     fn update(&mut self, _: &Turn, _: &GameStateView) {
@@ -25,13 +25,13 @@ impl Strategy for AlwaysPlay {
 #[derive(Clone)]
 pub struct AlwaysDiscardConfig;
 impl StrategyConfig for AlwaysDiscardConfig {
-    fn initialize(&self, _: &Player, _: &GameStateView) -> Box<Strategy> {
+    fn initialize(&self, _: Player, _: &GameStateView) -> Box<Strategy> {
         Box::new(AlwaysDiscard)
     }
 }
 pub struct AlwaysDiscard;
 impl Strategy for AlwaysDiscard {
-    fn decide(&mut self, _: &Player, _: &GameStateView) -> TurnChoice {
+    fn decide(&mut self, _: &GameStateView) -> TurnChoice {
         TurnChoice::Discard(0)
     }
     fn update(&mut self, _: &Turn, _: &GameStateView) {
@@ -48,20 +48,22 @@ pub struct RandomStrategyConfig {
 }
 
 impl StrategyConfig for RandomStrategyConfig {
-    fn initialize(&self, _: &Player, _: &GameStateView) -> Box<Strategy> {
+    fn initialize(&self, player: Player, _: &GameStateView) -> Box<Strategy> {
         Box::new(RandomStrategy {
             hint_probability: self.hint_probability,
             play_probability: self.play_probability,
+            me: player,
         })
     }
 }
 pub struct RandomStrategy {
-    pub hint_probability: f64,
-    pub play_probability: f64,
+    hint_probability: f64,
+    play_probability: f64,
+    me: Player,
 }
 
 impl Strategy for RandomStrategy {
-    fn decide(&mut self, me: &Player, view: &GameStateView) -> TurnChoice {
+    fn decide(&mut self, view: &GameStateView) -> TurnChoice {
         let p = rand::random::<f64>();
         if p < self.hint_probability {
             if view.board.hints_remaining > 0 {
@@ -74,7 +76,7 @@ impl Strategy for RandomStrategy {
                     }
                 };
                 TurnChoice::Hint(Hint {
-                    player: view.board.player_to_left(&me),
+                    player: view.board.player_to_left(&self.me),
                     hinted: hinted,
                 })
             } else {

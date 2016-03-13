@@ -1,11 +1,11 @@
-use std::collections::HashMap;
 use std::cmp::Eq;
-use std::hash::Hash;
+use std::collections::HashMap;
 use std::fmt;
+use std::hash::Hash;
 
 use game::*;
 
-// Represents a bit of information about T
+// Represents information about possible values of type T
 pub trait Info<T> where T: Hash + Eq + Clone {
     // get all a-priori possibilities
     fn get_all_possibilities() -> Vec<T>;
@@ -40,12 +40,6 @@ pub trait Info<T> where T: Hash + Eq + Clone {
         possible_map
     }
 
-    fn merge(&mut self, other: &Self) {
-        for (value, possible) in self.get_mut_possibility_map().iter_mut() {
-            *possible = *possible && *other.get_possibility_map().get(value).unwrap();
-        }
-    }
-
     fn mark_true(&mut self, value: &T) {
         // mark everything else as definitively impossible
         for (other_value, possible) in self.get_mut_possibility_map().iter_mut() {
@@ -73,47 +67,23 @@ pub trait Info<T> where T: Hash + Eq + Clone {
 #[derive(Debug)]
 pub struct ColorInfo(HashMap<Color, bool>);
 impl ColorInfo {
-    pub fn new() -> ColorInfo {
-        ColorInfo(ColorInfo::initialize())
-    }
+    pub fn new() -> ColorInfo { ColorInfo(ColorInfo::initialize()) }
 }
 impl Info<Color> for ColorInfo {
-    fn get_all_possibilities() -> Vec<Color> {
-        let mut possible : Vec<Color> = Vec::new();
-        for color in COLORS.iter() {
-            possible.push(*color);
-        }
-        possible
-    }
-    fn get_possibility_map(&self) -> &HashMap<Color, bool> {
-        &self.0
-    }
-    fn get_mut_possibility_map(&mut self) -> &mut HashMap<Color, bool> {
-        &mut self.0
-    }
+    fn get_all_possibilities() -> Vec<Color> { COLORS.to_vec() }
+    fn get_possibility_map(&self) -> &HashMap<Color, bool> { &self.0 }
+    fn get_mut_possibility_map(&mut self) -> &mut HashMap<Color, bool> { &mut self.0 }
 }
 
 #[derive(Debug)]
 pub struct ValueInfo(HashMap<Value, bool>);
 impl ValueInfo {
-    pub fn new() -> ValueInfo {
-        ValueInfo(ValueInfo::initialize())
-    }
+    pub fn new() -> ValueInfo { ValueInfo(ValueInfo::initialize()) }
 }
 impl Info<Value> for ValueInfo {
-    fn get_all_possibilities() -> Vec<Value> {
-        let mut possible : Vec<Value> = Vec::new();
-        for value in VALUES.iter() {
-            possible.push(*value);
-        }
-        possible
-    }
-    fn get_possibility_map(&self) -> &HashMap<Value, bool> {
-        &self.0
-    }
-    fn get_mut_possibility_map(&mut self) -> &mut HashMap<Value, bool> {
-        &mut self.0
-    }
+    fn get_all_possibilities() -> Vec<Value> { VALUES.to_vec() }
+    fn get_possibility_map(&self) -> &HashMap<Value, bool> { &self.0 }
+    fn get_mut_possibility_map(&mut self) -> &mut HashMap<Value, bool> { &mut self.0 }
 }
 
 #[derive(Debug)]
@@ -134,8 +104,7 @@ impl fmt::Display for CardInfo {
         let mut string = String::new();
         for color in &COLORS {
             if self.color_info.is_possible(color) {
-                let colorchar = color.chars().next().unwrap();
-                string.push(colorchar);
+                string.push(display_color(color));
             }
         }
         // while string.len() < COLORS.len() + 1 {

@@ -1,6 +1,4 @@
-
 use rand::{self, Rng};
-use std::convert::From;
 use std::collections::HashMap;
 use std::fmt;
 
@@ -12,6 +10,9 @@ use info::*;
 
 pub type Color = &'static str;
 pub const COLORS: [Color; 5] = ["blue", "red", "yellow", "white", "green"];
+pub fn display_color(color: Color) -> char {
+    color.chars().next().unwrap()
+}
 
 pub type Value = u32;
 // list of values, assumed to be small to large
@@ -34,10 +35,14 @@ pub struct Card {
     pub color: Color,
     pub value: Value,
 }
+impl Card {
+    fn new(color: Color, value: Value) -> Card {
+        Card { color: color, value: value }
+    }
+}
 impl fmt::Display for Card {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let colorchar = self.color.chars().next().unwrap();
-        write!(f, "{}{}", colorchar, self.value)
+        write!(f, "{}{}", display_color(self.color), self.value)
     }
 }
 
@@ -57,7 +62,7 @@ impl Firework {
     fn new(color: Color) -> Firework {
         let mut cards = Cards::new();
         // have a 0, so it's easier to implement
-        let card = Card { value: 0, color: color };
+        let card = Card::new(color, 0);
         cards.push(card);
         Firework {
             color: color,
@@ -153,13 +158,11 @@ impl fmt::Display for Discard {
         //     "{}", self.cards,
         // )));
         for color in COLORS.iter() {
-            let colorchar = color.chars().next().unwrap();
             try!(f.write_str(&format!(
-                "{}: ", colorchar,
+                "{}: ", display_color(color),
             )));
-            let color_count = self.counts.get(color).unwrap();
             for value in VALUES.iter() {
-                let count = color_count.get(value).unwrap();
+                let count = self.get_count(&Card::new(color, *value));
                 let total = get_count_for_value(value);
                 try!(f.write_str(&format!(
                     "{}/{} {}s", count, total, value
@@ -248,7 +251,7 @@ impl PlayerState {
         }).collect::<Vec<_>>();
         PlayerState {
             hand: hand,
-            info: CardsInfo::from(infos),
+            info: infos,
         }
     }
 
@@ -297,7 +300,7 @@ fn new_deck() -> Cards {
         for value in VALUES.iter() {
             let count = get_count_for_value(value);
             for _ in 0..count {
-                deck.push(Card {color: color, value: value.clone()});
+                deck.push(Card::new(color, value.clone()));
             }
         }
     };
@@ -394,7 +397,7 @@ impl BoardState {
                         break
                     } else {
                         // need these cards
-                        let needed_card = Card {color: card.color, value: value.clone()};
+                        let needed_card = Card::new(card.color, value.clone());
                         if self.discard.has_all(&needed_card) {
                             // already discarded all of these
                             playable = false;
@@ -505,12 +508,12 @@ impl GameState {
 
         let mut player_states : HashMap<Player, PlayerState> = HashMap::new();
         for i in 0..opts.num_players {
-            let raw_hand = (0..opts.hand_size).map(|_| {
+            let hand = (0..opts.hand_size).map(|_| {
                     // we can assume the deck is big enough to draw initial hands
                     board.deck.pop().unwrap()
                 }).collect::<Vec<_>>();
             player_states.insert(
-                i,  PlayerState::new(Cards::from(raw_hand)),
+                i,  PlayerState::new(hand),
             );
         }
 

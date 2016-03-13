@@ -14,10 +14,20 @@ pub type Color = &'static str;
 pub const COLORS: [Color; 5] = ["blue", "red", "yellow", "white", "green"];
 
 pub type Value = u32;
-// list of (value, count) pairs
+// list of values, assumed to be small to large
 pub const VALUES : [Value; 5] = [1, 2, 3, 4, 5];
-pub const VALUE_COUNTS : [(Value, u32); 5] = [(1, 3), (2, 2), (3, 2), (4, 2), (5, 1)];
 pub const FINAL_VALUE : Value = 5;
+
+pub fn get_count_for_value(value: &Value) -> usize {
+    match *value {
+        1         => 3,
+        2 | 3 | 4 => 2,
+        5         => 1,
+        _ => { panic!(format!("Unexpected value: {}", value)); }
+    }
+}
+
+pub type Player = u32;
 
 #[derive(Debug)]
 pub struct Card {
@@ -68,7 +78,7 @@ impl <T> fmt::Display for Pile<T> where T: fmt::Display {
         for item in &self.0 {
             try!(f.write_str(&format!("{}, ", item)));
         }
-        try!(f.write_str(""));
+        try!(f.write_str("]"));
         Ok(())
     }
 }
@@ -76,8 +86,6 @@ impl <T> fmt::Display for Pile<T> where T: fmt::Display {
 pub type Cards = Pile<Card>;
 
 pub type CardsInfo = Pile<CardInfo>;
-
-pub type Player = u32;
 
 #[derive(Debug)]
 pub struct Firework {
@@ -101,11 +109,7 @@ impl Firework {
     }
 
     fn desired_value(&self) -> Option<Value> {
-        if self.complete() {
-            None
-        } else {
-            Some(self.top_value() + 1)
-        }
+        if self.complete() { None } else { Some(self.top_value() + 1) }
     }
 
     fn score(&self) -> usize {
@@ -137,6 +141,75 @@ impl fmt::Display for Firework {
         } else {
             write!(f, "{} firework at {}", self.color, self.top_value())
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct Discard {
+    pub cards: Cards,
+    counts: HashMap<Color, HashMap<Value, usize>>,
+}
+impl Discard {
+    fn new() -> Discard {
+        let mut counts = HashMap::new();
+        for color in COLORS.iter() {
+            let mut color_count = HashMap::new();
+            for value in VALUES.iter() {
+                color_count.insert(*value, 0);
+            }
+            counts.insert(*color, color_count);
+        }
+        Discard {
+            cards: Cards::new(),
+            counts: counts,
+        }
+    }
+
+    fn get_count(&self, card: &Card) -> usize {
+        let color_count = self.counts.get(card.color).unwrap();
+        color_count.get(&card.value).unwrap().clone()
+    }
+
+    fn has_all(&self, card: &Card) -> bool {
+        self.remaining(card) == 0
+    }
+
+    fn remaining(&self, card: &Card) -> usize {
+        let count = self.get_count(&card);
+        get_count_for_value(&card.value) - count
+    }
+
+    fn place(&mut self, card: Card) {
+        let count = self.get_count(&card);
+        let ref mut color_count = self.counts.get_mut(card.color).unwrap();
+        color_count.insert(card.value, count + 1);
+        self.cards.place(card);
+    }
+}
+impl fmt::Display for Discard {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // try!(f.write_str(&format!(
+        //     "{}", self.cards,
+        // )));
+        for color in COLORS.iter() {
+            let colorchar = color.chars().next().unwrap();
+            try!(f.write_str(&format!(
+                "{}: ", colorchar,
+            )));
+            let color_count = self.counts.get(color).unwrap();
+            for value in VALUES.iter() {
+                let count = color_count.get(value).unwrap();
+                let total = get_count_for_value(value);
+                try!(f.write_str(&format!(
+                    "{}/{} {}s", count, total, value
+                )));
+                if *value != FINAL_VALUE {
+                    try!(f.write_str(", "));
+                }
+            }
+            try!(f.write_str("\n"));
+        }
+        Ok(())
     }
 }
 
@@ -260,9 +333,10 @@ fn new_deck() -> Cards {
     let mut deck: Cards = Cards::from(Vec::new());
 
     for color in COLORS.iter() {
-        for &(value, count) in VALUE_COUNTS.iter() {
+        for value in VALUES.iter() {
+            let count = get_count_for_value(value);
             for _ in 0..count {
-                deck.place(Card {color: color, value: value});
+                deck.place(Card {color: color, value: value.clone()});
             }
         }
     };
@@ -276,7 +350,7 @@ fn new_deck() -> Cards {
 #[derive(Debug)]
 pub struct BoardState {
     deck: Cards,
-    pub discard: Cards,
+    pub discard: Discard,
     pub fireworks: HashMap<Color, Firework>,
 
     pub num_players: u32,
@@ -305,7 +379,7 @@ impl BoardState {
         BoardState {
             deck: new_deck(),
             fireworks: fireworks,
-            discard: Cards::new(),
+            discard: Discard::new(),
             num_players: opts.num_players,
             player: 0,
             turn: 1,
@@ -328,6 +402,47 @@ impl BoardState {
     pub fn is_playable(&self, card: &Card) -> bool {
         let firework = self.fireworks.get(card.color).unwrap();
         Some(card.value) == firework.desired_value()
+    }
+
+    pub fn was_played(&self, card: &Card) -> bool {
+        let firework = self.fireworks.get(card.color).unwrap();
+        if firework.complete() {
+            true
+        } else {
+            card.value < firework.desired_value().unwrap()
+        }
+    }
+
+    // is never going to play, based on discard + fireworks
+    pub fn is_unplayable(&self, card: &Card) -> bool {
+        let firework = self.fireworks.get(card.color).unwrap();
+        if firework.complete() {
+            true
+        } else {
+            let desired = firework.desired_value().unwrap();
+            if card.value < desired {
+                true
+            } else {
+                let mut playable = true;
+                for value in VALUES.iter() {
+                    if *value < desired {
+                        // already have these cards
+                        continue
+                    } else if *value > card.value {
+                        // don't care about these cards
+                        break
+                    } else {
+                        // need these cards
+                        let needed_card = Card {color: card.color, value: value.clone()};
+                        if self.discard.has_all(&needed_card) {
+                            // already discarded all of these
+                            playable = false;
+                        }
+                    }
+                }
+                playable
+            }
+        }
     }
 
     pub fn get_players(&self) -> Vec<Player> {
@@ -377,7 +492,8 @@ impl fmt::Display for BoardState {
         for (_, firework) in &self.fireworks {
             try!(f.write_str(&format!("  {}\n", firework)));
         }
-        //  discard: Cards::new(),
+        try!(f.write_str("Discard:\n"));
+        try!(f.write_str(&format!("{}\n", self.discard)));
 
         Ok(())
     }

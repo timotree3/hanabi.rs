@@ -41,51 +41,12 @@ impl fmt::Display for Card {
     }
 }
 
-#[derive(Debug)]
-// basically a stack of cards, or card info
-pub struct Pile<T>(Vec<T>);
-impl <T> Pile<T> {
-    pub fn new() -> Pile<T> {
-        Pile(Vec::<T>::new())
-    }
-    pub fn draw(&mut self) -> Option<T> {
-        self.0.pop()
-    }
-    pub fn place(&mut self, item: T) {
-        self.0.push(item);
-    }
-    pub fn take(&mut self, index: usize) -> T {
-        self.0.remove(index)
-    }
-    pub fn top(&self) -> Option<&T> {
-        self.0.last()
-    }
-    pub fn shuffle(&mut self) {
-        rand::thread_rng().shuffle(&mut self.0[..]);
-    }
-    pub fn size(&self) -> usize {
-        self.0.len()
-    }
-}
-impl <T> From<Vec<T>> for Pile<T> {
-    fn from(items: Vec<T>) -> Pile<T> {
-        Pile(items)
-    }
-}
-impl <T> fmt::Display for Pile<T> where T: fmt::Display {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(f.write_str("["));
-        for item in &self.0 {
-            try!(f.write_str(&format!("{}, ", item)));
-        }
-        try!(f.write_str("]"));
-        Ok(())
-    }
-}
+pub type Cards = Vec<Card>;
+pub type CardsInfo = Vec<CardInfo>;
 
-pub type Cards = Pile<Card>;
-
-pub type CardsInfo = Pile<CardInfo>;
+fn shuffle<T>(vec: &mut Vec<T>) {
+    rand::thread_rng().shuffle(&mut vec[..]);
+}
 
 #[derive(Debug)]
 pub struct Firework {
@@ -97,7 +58,7 @@ impl Firework {
         let mut cards = Cards::new();
         // have a 0, so it's easier to implement
         let card = Card { value: 0, color: color };
-        cards.place(card);
+        cards.push(card);
         Firework {
             color: color,
             cards: cards,
@@ -105,7 +66,7 @@ impl Firework {
     }
 
     fn top_value(&self) -> Value {
-        self.cards.top().unwrap().value
+        self.cards.last().unwrap().value
     }
 
     fn desired_value(&self) -> Option<Value> {
@@ -114,7 +75,7 @@ impl Firework {
 
     fn score(&self) -> usize {
         // subtract one to account for the 0 we pushed
-        self.cards.size() - 1
+        self.cards.len() - 1
     }
 
     fn complete(&self) -> bool {
@@ -131,7 +92,7 @@ impl Firework {
             "Attempted to place card of wrong value on firework!"
         );
 
-        self.cards.place(card);
+        self.cards.push(card);
     }
 }
 impl fmt::Display for Firework {
@@ -183,7 +144,7 @@ impl Discard {
         let count = self.get_count(&card);
         let ref mut color_count = self.counts.get_mut(card.color).unwrap();
         color_count.insert(card.value, count + 1);
-        self.cards.place(card);
+        self.cards.push(card);
     }
 }
 impl fmt::Display for Discard {
@@ -272,8 +233,8 @@ impl fmt::Display for PlayerState {
         try!(f.write_str("hand:    "));
 
         let mut i = 0;
-        for card in &self.hand.0 {
-            let info : &CardInfo = &self.info.0[i];
+        for card in &self.hand {
+            let info : &CardInfo = &self.info[i];
             try!(f.write_str(&format!("{} =? {: <15} ", card, info)));
             i += 1;
         }
@@ -282,7 +243,7 @@ impl fmt::Display for PlayerState {
 }
 impl PlayerState {
     pub fn new(hand: Cards) -> PlayerState {
-        let infos = (0..hand.size()).map(|_| {
+        let infos = (0..hand.len()).map(|_| {
             CardInfo::new()
         }).collect::<Vec<_>>();
         PlayerState {
@@ -292,22 +253,22 @@ impl PlayerState {
     }
 
     pub fn take(&mut self, index: usize) -> (Card, CardInfo) {
-        let card = self.hand.take(index);
-        let info = self.info.take(index);
+        let card = self.hand.remove(index);
+        let info = self.info.remove(index);
         (card, info)
     }
 
     pub fn place(&mut self, card: Card) {
-        self.hand.place(card);
-        self.info.place(CardInfo::new());
+        self.hand.push(card);
+        self.info.push(CardInfo::new());
     }
 
     pub fn reveal(&mut self, hinted: &Hinted) {
         match hinted {
             &Hinted::Color(ref color) => {
                 let mut i = 0;
-                for card in &self.hand.0 {
-                    self.info.0[i].color_info.mark(
+                for card in &self.hand {
+                    self.info[i].color_info.mark(
                         color,
                         card.color == *color
                     );
@@ -316,8 +277,8 @@ impl PlayerState {
             }
             &Hinted::Value(ref value) => {
                 let mut i = 0;
-                for card in &self.hand.0 {
-                    self.info.0[i].value_info.mark(
+                for card in &self.hand {
+                    self.info[i].value_info.mark(
                         value,
                         card.value == *value
                     );
@@ -330,18 +291,18 @@ impl PlayerState {
 }
 
 fn new_deck() -> Cards {
-    let mut deck: Cards = Cards::from(Vec::new());
+    let mut deck: Cards = Cards::new();
 
     for color in COLORS.iter() {
         for value in VALUES.iter() {
             let count = get_count_for_value(value);
             for _ in 0..count {
-                deck.place(Card {color: color, value: value.clone()});
+                deck.push(Card {color: color, value: value.clone()});
             }
         }
     };
-    deck.shuffle();
-    info!("Created deck: {}", deck);
+    shuffle(&mut deck);
+    debug!("Created deck: {:?}", deck);
     deck
 }
 
@@ -458,7 +419,7 @@ impl BoardState {
     }
 
     pub fn deck_size(&self) -> usize {
-        self.deck.size()
+        self.deck.len()
     }
 
     pub fn player_to_left(&self, player: &Player) -> Player {
@@ -546,7 +507,7 @@ impl GameState {
         for i in 0..opts.num_players {
             let raw_hand = (0..opts.hand_size).map(|_| {
                     // we can assume the deck is big enough to draw initial hands
-                    board.deck.draw().unwrap()
+                    board.deck.pop().unwrap()
                 }).collect::<Vec<_>>();
             player_states.insert(
                 i,  PlayerState::new(Cards::from(raw_hand)),
@@ -593,7 +554,7 @@ impl GameState {
     fn take_from_hand(&mut self, index: usize) -> Card {
         let ref mut state = self.player_states.get_mut(&self.board.player).unwrap();
         let (card, _) = state.take(index);
-        if let Some(new_card) = self.board.deck.draw() {
+        if let Some(new_card) = self.board.deck.pop() {
             info!("Drew new card, {}", new_card);
             state.place(new_card);
         }
@@ -655,7 +616,7 @@ impl GameState {
             }
         }
 
-        if self.board.deck.size() == 0 {
+        if self.board.deck.len() == 0 {
             self.board.deckless_turns_remaining -= 1;
         }
         self.board.turn += 1;

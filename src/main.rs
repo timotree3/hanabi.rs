@@ -28,8 +28,8 @@ impl log::Log for SimpleLogger {
 
 fn main() {
     log::set_logger(|max_log_level| {
-        //max_log_level.set(log::LogLevelFilter::Trace);
-        max_log_level.set(log::LogLevelFilter::Info);
+        max_log_level.set(log::LogLevelFilter::Trace);
+        // max_log_level.set(log::LogLevelFilter::Info);
         Box::new(SimpleLogger)
     }).unwrap();
 
@@ -42,15 +42,6 @@ fn main() {
     let n = 1000;
     // simulator::simulate(&opts, &strategies::examples::AlwaysDiscard, n);
     // simulator::simulate_symmetric(&opts, strategies::examples::AlwaysPlayConfig, n);
-    // simulator::simulate(
-    //     &opts,
-    //     &vec![
-    //         Box::new(strategies::examples::AlwaysPlayConfig),
-    //         Box::new(strategies::examples::AlwaysPlayConfig),
-    //         Box::new(strategies::examples::AlwaysPlayConfig),
-    //         Box::new(strategies::examples::AlwaysPlayConfig),
-    //     ],
-    //     n);
     // simulator::simulate_symmetric(
     //     &opts,
     //     strategies::examples::RandomStrategyConfig {
@@ -59,9 +50,13 @@ fn main() {
     //     },
     //     n
     // );
-    simulator::simulate_symmetric(
-        &opts,
+    // simulator::simulate_symmetric(
+    //     &opts,
+    //     strategies::cheating::CheatingStrategyConfig::new(),
+    //     n
+    // );
+    simulator::simulate_symmetric_once(
+        &opts, Some(993),
         strategies::cheating::CheatingStrategyConfig::new(),
-        n
     );
 }

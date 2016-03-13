@@ -1,4 +1,4 @@
-use rand::{self, Rng};
+use rand::{self, Rng, SeedableRng};
 use std::collections::HashMap;
 use std::fmt;
 
@@ -48,10 +48,6 @@ impl fmt::Display for Card {
 
 pub type Cards = Vec<Card>;
 pub type CardsInfo = Vec<CardInfo>;
-
-fn shuffle<T>(vec: &mut Vec<T>) {
-    rand::thread_rng().shuffle(&mut vec[..]);
-}
 
 #[derive(Debug)]
 pub struct Firework {
@@ -293,7 +289,7 @@ impl PlayerState {
     }
 }
 
-fn new_deck() -> Cards {
+fn new_deck(seed: u32) -> Cards {
     let mut deck: Cards = Cards::new();
 
     for color in COLORS.iter() {
@@ -304,7 +300,9 @@ fn new_deck() -> Cards {
             }
         }
     };
-    shuffle(&mut deck);
+
+    rand::ChaChaRng::from_seed(&[seed]).shuffle(&mut deck[..]);
+
     trace!("Created deck: {:?}", deck);
     deck
 }
@@ -334,14 +332,14 @@ pub struct BoardState {
     pub deckless_turns_remaining: u32,
 }
 impl BoardState {
-    pub fn new(opts: &GameOptions) -> BoardState {
+    pub fn new(opts: &GameOptions, seed: u32) -> BoardState {
         let mut fireworks : HashMap<Color, Firework> = HashMap::new();
         for color in COLORS.iter() {
             fireworks.insert(color, Firework::new(color));
         }
 
         BoardState {
-            deck: new_deck(),
+            deck: new_deck(seed),
             fireworks: fireworks,
             discard: Discard::new(),
             num_players: opts.num_players,
@@ -528,8 +526,8 @@ impl fmt::Display for GameState {
 pub type Score = u32;
 
 impl GameState {
-    pub fn new(opts: &GameOptions) -> GameState {
-        let mut board = BoardState::new(opts);
+    pub fn new(opts: &GameOptions, seed: u32) -> GameState {
+        let mut board = BoardState::new(opts, seed);
 
         let mut player_states : HashMap<Player, PlayerState> = HashMap::new();
         for i in 0..opts.num_players {

@@ -38,6 +38,8 @@ pub fn simulate_once<'a>(
         i += 1;
     }
 
+    debug!("Initial state:\n{}", game);
+
     while !game.is_over() {
         debug!("Turn {}", game.board.turn);
         let player = game.board.player;

@@ -27,9 +27,11 @@ impl log::Log for SimpleLogger {
 }
 
 fn main() {
+    // TODO: make a binary with command line options
+
     log::set_logger(|max_log_level| {
-        max_log_level.set(log::LogLevelFilter::Trace);
-        // max_log_level.set(log::LogLevelFilter::Info);
+        // max_log_level.set(log::LogLevelFilter::Trace);
+        max_log_level.set(log::LogLevelFilter::Info);
         Box::new(SimpleLogger)
     }).unwrap();
 
@@ -50,13 +52,13 @@ fn main() {
     //     },
     //     n
     // );
-    // simulator::simulate_symmetric(
-    //     &opts,
-    //     strategies::cheating::CheatingStrategyConfig::new(),
-    //     n
-    // );
-    simulator::simulate_symmetric_once(
-        &opts, Some(993),
+    simulator::simulate_symmetric(
+        &opts,
         strategies::cheating::CheatingStrategyConfig::new(),
+        n
     );
+    // simulator::simulate_symmetric_once(
+    //     &opts, Some(999),
+    //     strategies::cheating::CheatingStrategyConfig::new(),
+    // );
 }

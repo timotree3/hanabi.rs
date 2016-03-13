@@ -9,7 +9,7 @@ use info::*;
 */
 
 pub type Color = &'static str;
-pub const COLORS: [Color; 5] = ["blue", "red", "yellow", "white", "green"];
+pub const COLORS: [Color; 5] = ["red", "yellow", "green", "blue", "white"];
 pub fn display_color(color: Color) -> char {
     color.chars().next().unwrap()
 }
@@ -321,6 +321,7 @@ pub struct BoardState {
     pub turn: u32,
     // // whose turn is it?
     pub player: Player,
+    pub hand_size: u32,
 
     pub hints_total: u32,
     pub hints_remaining: u32,
@@ -343,6 +344,7 @@ impl BoardState {
             fireworks: fireworks,
             discard: Discard::new(),
             num_players: opts.num_players,
+            hand_size: opts.hand_size,
             player: 0,
             turn: 1,
             hints_total: opts.num_hints,
@@ -360,10 +362,13 @@ impl BoardState {
         }
     }
 
+    fn get_firework(&self, color: &Color) -> &Firework {
+        self.fireworks.get(color).unwrap()
+    }
+
     // returns whether a card would place on a firework
     pub fn is_playable(&self, card: &Card) -> bool {
-        let firework = self.fireworks.get(card.color).unwrap();
-        Some(card.value) == firework.desired_value()
+        Some(card.value) == self.get_firework(&card.color).desired_value()
     }
 
     pub fn was_played(&self, card: &Card) -> bool {
@@ -399,7 +404,7 @@ impl BoardState {
     }
 
     // is never going to play, based on discard + fireworks
-    pub fn is_unplayable(&self, card: &Card) -> bool {
+    pub fn is_dead(&self, card: &Card) -> bool {
         let firework = self.fireworks.get(card.color).unwrap();
         if firework.complete() {
             true
@@ -413,20 +418,20 @@ impl BoardState {
         }
     }
 
-    // cannot be discarded without sacrificing score, based on discard + fireworks
-    pub fn is_undiscardable(&self, card: &Card) -> bool {
+    // can be discarded without necessarily sacrificing score, based on discard + fireworks
+    pub fn is_dispensable(&self, card: &Card) -> bool {
         let firework = self.fireworks.get(card.color).unwrap();
         if firework.complete() {
-            false
+            true
         } else {
             let desired = firework.desired_value().unwrap();
             if card.value < desired {
-                false
+                true
             } else {
                 if card.value > self.highest_attainable(&card.color) {
-                    false
+                    true
                 } else {
-                    self.discard.remaining(&card) == 1
+                    self.discard.remaining(&card) != 1
                 }
             }
         }
@@ -454,12 +459,23 @@ impl BoardState {
     pub fn player_to_right(&self, player: &Player) -> Player {
         (player - 1) % self.num_players
     }
+
+    pub fn is_over(&self) -> bool {
+        (self.lives_remaining == 0) || (self.deckless_turns_remaining == 0)
+    }
 }
 impl fmt::Display for BoardState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(f.write_str(&format!(
-            "Turn {} (Player {}'s turn):\n", self.turn, self.player
-        )));
+        if self.is_over() {
+            try!(f.write_str(&format!(
+                "Turn {} (GAME ENDED):\n", self.turn
+            )));
+        } else {
+            try!(f.write_str(&format!(
+                "Turn {} (Player {}'s turn):\n", self.turn, self.player
+            )));
+        }
+
         let deck_size = self.deck_size();
         try!(f.write_str(&format!(
             "{} cards remaining in deck\n", deck_size
@@ -476,8 +492,8 @@ impl fmt::Display for BoardState {
             "{}/{} lives remaining\n", self.lives_remaining, self.lives_total
         )));
         try!(f.write_str("Fireworks:\n"));
-        for (_, firework) in &self.fireworks {
-            try!(f.write_str(&format!("  {}\n", firework)));
+        for color in COLORS.iter() {
+            try!(f.write_str(&format!("  {}\n", self.get_firework(color))));
         }
         try!(f.write_str("Discard:\n"));
         try!(f.write_str(&format!("{}\n", self.discard)));
@@ -499,6 +515,26 @@ pub struct GameStateView<'a> {
     // board state
     pub board: &'a BoardState,
 }
+impl <'a> GameStateView<'a> {
+    pub fn has_card(&self, player: &Player, card: &Card) -> bool {
+        assert!(self.player != *player, "Cannot query about your own cards!");
+        let state = self.other_player_states.get(player).unwrap();
+        for other_card in &state.hand {
+            if *card == *other_card {
+                return true;
+            }
+        }
+        false
+    }
+    pub fn can_see(&self, card: &Card) -> bool {
+        for other_player in self.other_player_states.keys() {
+            if self.has_card(other_player, card) {
+                return true;
+            }
+        }
+        false
+    }
+}
 
 // complete game state (known to nobody!)
 #[derive(Debug)]
@@ -511,7 +547,7 @@ impl fmt::Display for GameState {
         try!(f.write_str("==========================\n"));
         try!(f.write_str("Hands:\n"));
         try!(f.write_str("==========================\n"));
-        for player in 0..self.board.num_players {
+        for player in self.board.get_players() {
             let state = &self.player_states.get(&player).unwrap();
             try!(f.write_str(&format!("player {} {}\n", player, state)));
         }
@@ -552,8 +588,7 @@ impl GameState {
 
     pub fn is_over(&self) -> bool {
         // TODO: add condition that fireworks cannot be further completed?
-        (self.board.lives_remaining == 0) ||
-        (self.board.deckless_turns_remaining == 0)
+        self.board.is_over()
     }
 
     pub fn score(&self) -> Score {
@@ -580,11 +615,17 @@ impl GameState {
     fn take_from_hand(&mut self, index: usize) -> Card {
         let ref mut state = self.player_states.get_mut(&self.board.player).unwrap();
         let (card, _) = state.take(index);
-        if let Some(new_card) = self.board.deck.pop() {
-            debug!("Drew new card, {}", new_card);
-            state.place(new_card);
-        }
         card
+    }
+
+    fn replenish_hand(&mut self) {
+        let ref mut state = self.player_states.get_mut(&self.board.player).unwrap();
+        if (state.hand.len() as u32) < self.board.hand_size {
+            if let Some(new_card) = self.board.deck.pop() {
+                debug!("Drew new card, {}", new_card);
+                state.place(new_card);
+            }
+        }
     }
 
     pub fn process_choice(&mut self, choice: &TurnChoice) {
@@ -641,6 +682,8 @@ impl GameState {
                 }
             }
         }
+
+        self.replenish_hand();
 
         if self.board.deck.len() == 0 {
             self.board.deckless_turns_remaining -= 1;

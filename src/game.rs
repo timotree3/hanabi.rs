@@ -30,7 +30,7 @@ pub fn get_count_for_value(value: &Value) -> usize {
 
 pub type Player = u32;
 
-#[derive(Debug)]
+#[derive(Debug,Clone,PartialEq)]
 pub struct Card {
     pub color: Color,
     pub value: Value,
@@ -227,9 +227,9 @@ pub struct GameOptions {
 #[derive(Debug)]
 pub struct PlayerState {
     // the player's actual hand
-    hand: Cards,
+    pub hand: Cards,
     // represents what is common knowledge about the player's hand
-    info: CardsInfo,
+    pub info: CardsInfo,
 }
 impl fmt::Display for PlayerState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -305,7 +305,7 @@ fn new_deck() -> Cards {
         }
     };
     shuffle(&mut deck);
-    debug!("Created deck: {:?}", deck);
+    trace!("Created deck: {:?}", deck);
     deck
 }
 
@@ -542,7 +542,7 @@ impl GameState {
         let mut other_player_states = HashMap::new();
         for (other_player, state) in &self.player_states {
             if player != *other_player {
-                other_player_states.insert(player, state);
+                other_player_states.insert(*other_player, state);
             }
         }
         GameStateView {
@@ -558,20 +558,20 @@ impl GameState {
         let ref mut state = self.player_states.get_mut(&self.board.player).unwrap();
         let (card, _) = state.take(index);
         if let Some(new_card) = self.board.deck.pop() {
-            info!("Drew new card, {}", new_card);
+            debug!("Drew new card, {}", new_card);
             state.place(new_card);
         }
         card
     }
 
     pub fn process_choice(&mut self, choice: &TurnChoice) {
-        info!("Player {}'s move", self.board.player);
+        debug!("Player {}'s move", self.board.player);
         match choice {
             &TurnChoice::Hint(ref hint) => {
                 assert!(self.board.hints_remaining > 0,
                         "Tried to hint with no hints remaining");
                 self.board.hints_remaining -= 1;
-                info!("Hint to player {}, about {}", hint.player, hint.hinted);
+                debug!("Hint to player {}, about {}", hint.player, hint.hinted);
 
                 assert!(self.board.player != hint.player,
                         format!("Player {} gave a hint to himself", hint.player));
@@ -581,7 +581,7 @@ impl GameState {
             }
             &TurnChoice::Discard(index) => {
                 let card = self.take_from_hand(index);
-                info!("Discard card in position {}, which is {}", index, card);
+                debug!("Discard card in position {}, which is {}", index, card);
                 self.board.discard.place(card);
 
                 self.board.try_add_hint();
@@ -589,7 +589,7 @@ impl GameState {
             &TurnChoice::Play(index) => {
                 let card = self.take_from_hand(index);
 
-                info!(
+                debug!(
                     "Playing card at position {}, which is {}",
                     index, card
                 );
@@ -599,15 +599,15 @@ impl GameState {
                 if self.board.is_playable(&card) {
                     let ref mut firework = self.board.fireworks.get_mut(&card.color).unwrap();
                     firework_made = card.value == FINAL_VALUE;
-                    info!("Successfully played {}!", card);
+                    debug!("Successfully played {}!", card);
                     if firework_made {
-                        info!("Firework complete for {}!", card.color);
+                        debug!("Firework complete for {}!", card.color);
                     }
                     firework.place(card);
                 } else {
                     self.board.discard.place(card);
                     self.board.lives_remaining -= 1;
-                    info!(
+                    debug!(
                         "Removing a life! Lives remaining: {}",
                         self.board.lives_remaining
                     );

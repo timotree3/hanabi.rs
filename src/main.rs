@@ -6,6 +6,7 @@ mod game;
 mod simulator;
 mod strategies {
     pub mod examples;
+    pub mod cheating;
 }
 mod info;
 
@@ -27,7 +28,8 @@ impl log::Log for SimpleLogger {
 
 fn main() {
     log::set_logger(|max_log_level| {
-        max_log_level.set(log::LogLevelFilter::Trace);
+        //max_log_level.set(log::LogLevelFilter::Trace);
+        max_log_level.set(log::LogLevelFilter::Info);
         Box::new(SimpleLogger)
     }).unwrap();
 
@@ -37,7 +39,7 @@ fn main() {
         num_hints: 8,
         num_lives: 3,
     };
-    let n = 1;
+    let n = 1000;
     // simulator::simulate(&opts, &strategies::examples::AlwaysDiscard, n);
     // simulator::simulate_symmetric(&opts, strategies::examples::AlwaysPlayConfig, n);
     // simulator::simulate(
@@ -49,12 +51,17 @@ fn main() {
     //         Box::new(strategies::examples::AlwaysPlayConfig),
     //     ],
     //     n);
+    // simulator::simulate_symmetric(
+    //     &opts,
+    //     strategies::examples::RandomStrategyConfig {
+    //         hint_probability: 0.4,
+    //         play_probability: 0.2,
+    //     },
+    //     n
+    // );
     simulator::simulate_symmetric(
         &opts,
-        strategies::examples::RandomStrategyConfig {
-            hint_probability: 0.4,
-            play_probability: 0.2,
-        },
+        strategies::cheating::CheatingStrategyConfig::new(),
         n
     );
 }

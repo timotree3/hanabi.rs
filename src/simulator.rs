@@ -56,7 +56,7 @@ pub fn simulate<'a>(opts: &GameOptions, strat_configs: &Vec<Box<StrategyConfig +
     let mut total_score = 0;
     for _ in 0..n_trials {
         let score = simulate_once(&opts, strat_configs);
-        info!("Scored: {:?}", score);
+        debug!("Scored: {:?}", score);
         total_score += score;
     }
     let average: f32 = (total_score as f32) / (n_trials as f32);

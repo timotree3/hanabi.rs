@@ -1,6 +1,7 @@
-extern crate rand;
+extern crate getopts;
 #[macro_use]
 extern crate log;
+extern crate rand;
 
 mod game;
 mod simulator;
@@ -10,13 +11,13 @@ mod strategies {
 }
 mod info;
 
-#[allow(unused_imports)]
-use log::LogLevel::{Trace, Debug, Info, Warn, Error};
+use getopts::Options;
+use std::str::FromStr;
 
 struct SimpleLogger;
 impl log::Log for SimpleLogger {
     fn enabled(&self, metadata: &log::LogMetadata) -> bool {
-        metadata.level() <= Debug
+        metadata.level() <= log::LogLevel::Trace
     }
 
     fn log(&self, record: &log::LogRecord) {
@@ -26,37 +27,75 @@ impl log::Log for SimpleLogger {
     }
 }
 
+
+fn print_usage(program: &str, opts: Options) {
+    print!("{}", opts.usage(&format!("Usage: {} [options]", program)));
+}
+
+
 fn main() {
-    // TODO: make a binary with command line options
+    let args: Vec<String> = std::env::args().collect();
+    let program = args[0].clone();
+
+    let mut opts = Options::new();
+    opts.optopt("l", "loglevel", "Log level, one of 'trace', 'debug', 'info', 'warn', and 'error'", "LOGLEVEL");
+    opts.optopt("n", "ntrials", "Number of games to simulate", "NTRIALS");
+    opts.optopt("s", "seed", "Seed for PRNG (can only be used with n=1)", "SEED");
+    opts.optflag("h", "help", "Print this help menu");
+    let matches = match opts.parse(&args[1..]) {
+        Ok(m) => { m }
+        Err(f) => {
+            print_usage(&program, opts);
+            panic!(f.to_string())
+        }
+    };
+    if matches.opt_present("h") {
+        return print_usage(&program, opts);
+    }
+    if !matches.free.is_empty() {
+        return print_usage(&program, opts);
+    }
+
+    let log_level_str : &str = &matches.opt_str("l").unwrap_or("info".to_string());
+    let log_level = match log_level_str {
+        "trace" => { log::LogLevelFilter::Trace }
+        "debug" => { log::LogLevelFilter::Debug }
+        "info"  => { log::LogLevelFilter::Info }
+        "warn"  => { log::LogLevelFilter::Warn }
+        "error" => { log::LogLevelFilter::Error }
+        _       => { panic!("Unexpected log level argument {}", log_level_str); }
+    };
 
     log::set_logger(|max_log_level| {
-        // max_log_level.set(log::LogLevelFilter::Trace);
-        max_log_level.set(log::LogLevelFilter::Info);
+        max_log_level.set(log_level);
         Box::new(SimpleLogger)
     }).unwrap();
 
+    let n = u32::from_str(&matches.opt_str("n").unwrap_or("1".to_string())).unwrap();
+
+    let seed = matches.opt_str("s").map(|seed_str| { u32::from_str(&seed_str).unwrap() });
+
+    // TODO: make these configurable
     let opts = game::GameOptions {
         num_players: 4,
         hand_size: 4,
         num_hints: 8,
         num_lives: 3,
     };
-    let n = 1000;
-    // simulator::simulate(&opts, &strategies::examples::AlwaysDiscard, n);
-    // simulator::simulate_symmetric(&opts, strategies::examples::AlwaysPlayConfig, n);
-    // simulator::simulate_symmetric(
-    //     &opts,
-    //     strategies::examples::RandomStrategyConfig {
-    //         hint_probability: 0.4,
-    //         play_probability: 0.2,
-    //     },
-    //     n
-    // );
-    simulator::simulate_symmetric(
-        &opts,
-        strategies::cheating::CheatingStrategyConfig::new(),
-        n
-    );
+
+    // TODO: make this configurable
+    // let strategy = strategies::examples::AlwaysPlayConfig;
+    // let strategy = strategies::examples::RandomStrategyConfig {
+    //     hint_probability: 0.4,
+    //     play_probability: 0.2,
+    // };
+    let strategy = strategies::cheating::CheatingStrategyConfig::new();
+    if n == 1 {
+        simulator::simulate_symmetric_once(&opts, strategy, seed);
+    } else {
+        simulator::simulate_symmetric(&opts, strategy, n);
+    }
+
     // simulator::simulate_symmetric_once(
     //     &opts, Some(999),
     //     strategies::cheating::CheatingStrategyConfig::new(),

@@ -14,8 +14,8 @@ pub trait StrategyConfig {
 
 pub fn simulate_once<'a>(
         opts: &GameOptions,
+        strat_configs: &Vec<Box<StrategyConfig + 'a>>,
         seed_opt: Option<u32>,
-        strat_configs: &Vec<Box<StrategyConfig + 'a>>
     ) -> Score {
 
     let seed = if let Some(seed) = seed_opt {
@@ -69,7 +69,7 @@ pub fn simulate_once<'a>(
 pub fn simulate<'a>(opts: &GameOptions, strat_configs: &Vec<Box<StrategyConfig + 'a>>, n_trials: u32) -> f32 {
     let mut total_score = 0;
     for seed in 0..n_trials {
-        let score = simulate_once(&opts, Some(seed), strat_configs);
+        let score = simulate_once(&opts, strat_configs, Some(seed));
         debug!("Scored: {:?}", score);
         if score != 25 {
             info!("Seed with non-perfect score: {:?}", seed);
@@ -83,15 +83,15 @@ pub fn simulate<'a>(opts: &GameOptions, strat_configs: &Vec<Box<StrategyConfig +
 
 pub fn simulate_symmetric_once<'a, S: StrategyConfig + Clone + 'a>(
         opts: &GameOptions,
+        strat_config: S,
         seed_opt: Option<u32>,
-        strat_config: S
     ) -> Score {
 
     let mut strat_configs = Vec::new();
     for _ in 0..opts.num_players {
         strat_configs.push(Box::new(strat_config.clone()) as Box<StrategyConfig + 'a>);
     }
-    simulate_once(opts, seed_opt, &strat_configs)
+    simulate_once(opts, &strat_configs, seed_opt)
 }
 
 pub fn simulate_symmetric<'a, S: StrategyConfig + Clone + 'a>(opts: &GameOptions, strat_config: S, n_trials: u32) -> f32 {

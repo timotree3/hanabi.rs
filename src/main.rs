@@ -77,7 +77,7 @@ fn main() {
 
     // TODO: make these configurable
     let opts = game::GameOptions {
-        num_players: 4,
+        num_players: 5,
         hand_size: 4,
         num_hints: 8,
         num_lives: 3,
@@ -93,7 +93,7 @@ fn main() {
     if n == 1 {
         simulator::simulate_symmetric_once(&opts, strategy, seed);
     } else {
-        simulator::simulate_symmetric(&opts, strategy, n);
+        simulator::simulate_symmetric(&opts, strategy, n, seed);
     }
 
     // simulator::simulate_symmetric_once(

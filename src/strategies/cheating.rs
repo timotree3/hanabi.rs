@@ -117,14 +117,26 @@ impl Strategy for CheatingStrategy {
         }).peekable();
 
         if playable_cards.peek() == None {
+            // if view.board.deck_size() > 10 {
+            if view.board.discard.cards.len() < 5 {
+                // if anything is totally useless, discard it
+                for (i, card) in my_cards.iter().enumerate() {
+                    if view.board.is_dead(card) {
+                        return TurnChoice::Discard(i);
+                    }
+                }
+            }
+
+            // it's unintuitive that hinting is better than
+            // discarding dead cards, but turns out true
+            if view.board.hints_remaining > 1 {
+                return self.throwaway_hint(view);
+            }
             // if anything is totally useless, discard it
             for (i, card) in my_cards.iter().enumerate() {
                 if view.board.is_dead(card) {
                     return TurnChoice::Discard(i);
                 }
-            }
-            if view.board.hints_remaining > 0 {
-                return self.throwaway_hint(view);
             }
             // All cards are plausibly useful.
             // Play the best discardable card, according to the ordering induced by comparing
@@ -144,6 +156,12 @@ impl Strategy for CheatingStrategy {
                 }
             }
             if let Some(card) = discard_card {
+                if view.board.hints_remaining > 0 {
+                    if !view.can_see(card) {
+                        return self.throwaway_hint(view);
+                    }
+                }
+
                 let index = my_cards.iter().position(|iter_card| {
                     card == iter_card
                 }).unwrap();

@@ -18,11 +18,7 @@ pub fn simulate_once<'a>(
         seed_opt: Option<u32>,
     ) -> Score {
 
-    let seed = if let Some(seed) = seed_opt {
-        seed
-    } else {
-        rand::thread_rng().next_u32()
-    };
+    let seed = seed_opt.unwrap_or(rand::thread_rng().next_u32());
 
     let mut game = GameState::new(opts, seed);
 
@@ -66,16 +62,37 @@ pub fn simulate_once<'a>(
     game.score()
 }
 
-pub fn simulate<'a>(opts: &GameOptions, strat_configs: &Vec<Box<StrategyConfig + 'a>>, n_trials: u32) -> f32 {
+pub fn simulate<'a>(
+        opts: &GameOptions,
+        strat_configs: &Vec<Box<StrategyConfig + 'a>>,
+        n_trials: u32,
+        first_seed_opt: Option<u32>
+    ) -> f32 {
+
     let mut total_score = 0;
-    for seed in 0..n_trials {
+    let mut non_perfect_seeds = Vec::new();
+
+    let first_seed = first_seed_opt.unwrap_or(rand::thread_rng().next_u32());
+    let mut histogram = HashMap::<Score, usize>::new();
+    for i in 0..n_trials {
+        if (i > 0) && (i % 1000 == 0) {
+            let average: f32 = (total_score as f32) / (i as f32);
+            info!("Trials: {}, Average so far: {}", i, average);
+        }
+        let seed = first_seed + i;
         let score = simulate_once(&opts, strat_configs, Some(seed));
         debug!("Scored: {:?}", score);
+        let count = histogram.get(&score).unwrap_or(&0) + 1;
+        histogram.insert(score, count);
         if score != 25 {
-            info!("Seed with non-perfect score: {:?}", seed);
+            non_perfect_seeds.push((score, seed));
         }
         total_score += score;
     }
+
+    non_perfect_seeds.sort();
+    info!("Score histogram: {:?}", histogram);
+    info!("Seeds with non-perfect score: {:?}", non_perfect_seeds);
     let average: f32 = (total_score as f32) / (n_trials as f32);
     info!("Average score: {:?}", average);
     average
@@ -94,10 +111,16 @@ pub fn simulate_symmetric_once<'a, S: StrategyConfig + Clone + 'a>(
     simulate_once(opts, &strat_configs, seed_opt)
 }
 
-pub fn simulate_symmetric<'a, S: StrategyConfig + Clone + 'a>(opts: &GameOptions, strat_config: S, n_trials: u32) -> f32 {
+pub fn simulate_symmetric<'a, S: StrategyConfig + Clone + 'a>(
+        opts: &GameOptions,
+        strat_config: S,
+        n_trials: u32,
+        first_seed_opt: Option<u32>,
+    ) -> f32 {
+
     let mut strat_configs = Vec::new();
     for _ in 0..opts.num_players {
         strat_configs.push(Box::new(strat_config.clone()) as Box<StrategyConfig + 'a>);
     }
-    simulate(opts, &strat_configs, n_trials)
+    simulate(opts, &strat_configs, n_trials, first_seed_opt)
 }

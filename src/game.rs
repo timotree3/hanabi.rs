@@ -366,6 +366,10 @@ impl BoardState {
         self.fireworks.get(color).unwrap()
     }
 
+    fn get_firework_mut(&mut self, color: &Color) -> &mut Firework {
+        self.fireworks.get_mut(color).unwrap()
+    }
+
     // returns whether a card would place on a firework
     pub fn is_playable(&self, card: &Card) -> bool {
         Some(card.value) == self.get_firework(&card.color).desired_value()
@@ -658,16 +662,20 @@ impl GameState {
                     index, card
                 );
 
-                let mut firework_made = false;
-
                 if self.board.is_playable(&card) {
-                    let ref mut firework = self.board.fireworks.get_mut(&card.color).unwrap();
-                    firework_made = card.value == FINAL_VALUE;
-                    debug!("Successfully played {}!", card);
-                    if firework_made {
-                        debug!("Firework complete for {}!", card.color);
+                    let finished = {
+                        let firework = self.board.get_firework_mut(&card.color);
+                        debug!("Successfully played {}!", card);
+                        let finished = card.value == FINAL_VALUE;
+                        if finished {
+                            debug!("Firework complete for {}!", card.color);
+                        }
+                        firework.place(card);
+                        finished
+                    };
+                    if finished {
+                        self.board.try_add_hint();
                     }
-                    firework.place(card);
                 } else {
                     self.board.discard.place(card);
                     self.board.lives_remaining -= 1;
@@ -675,10 +683,6 @@ impl GameState {
                         "Removing a life! Lives remaining: {}",
                         self.board.lives_remaining
                     );
-                }
-
-                if firework_made {
-                    self.board.try_add_hint();
                 }
             }
         }

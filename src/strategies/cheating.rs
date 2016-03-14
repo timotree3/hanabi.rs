@@ -1,6 +1,6 @@
 use std::rc::Rc;
 use std::cell::{RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use simulator::*;
 use game::*;
@@ -101,6 +101,35 @@ impl CheatingStrategy {
         // maybe value 5s more?
         5 + (5 - (card.value as i32))
     }
+
+    fn find_useless_card(&self, view: &GameStateView, hand: &Cards) -> Option<usize> {
+        let mut set: HashSet<Card> = HashSet::new();
+
+        for (i, card) in hand.iter().enumerate() {
+            if view.board.is_dead(card) {
+                return Some(i);
+            }
+            if set.contains(card) {
+                // found a duplicate card
+                return Some(i);
+            }
+            set.insert(card.clone());
+        }
+        return None
+    }
+
+    fn someone_else_can_play(&self, view: &GameStateView) -> bool {
+        for player in view.board.get_players() {
+            if player != self.me {
+                for card in view.get_hand(&player) {
+                    if view.board.is_playable(card) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
 }
 impl Strategy for CheatingStrategy {
     fn decide(&mut self, view: &GameStateView) -> TurnChoice {
@@ -120,24 +149,23 @@ impl Strategy for CheatingStrategy {
             // if view.board.deck_size() > 10 {
             if view.board.discard.cards.len() < 5 {
                 // if anything is totally useless, discard it
-                for (i, card) in my_cards.iter().enumerate() {
-                    if view.board.is_dead(card) {
-                        return TurnChoice::Discard(i);
-                    }
-                }
-            }
-
-            // it's unintuitive that hinting is better than
-            // discarding dead cards, but turns out true
-            if view.board.hints_remaining > 1 {
-                return self.throwaway_hint(view);
-            }
-            // if anything is totally useless, discard it
-            for (i, card) in my_cards.iter().enumerate() {
-                if view.board.is_dead(card) {
+                if let Some(i) = self.find_useless_card(view, my_cards) {
                     return TurnChoice::Discard(i);
                 }
             }
+
+            // hinting is better than discarding dead cards
+            // (probably because it stalls the deck-drawing).
+            if view.board.hints_remaining > 1 {
+                if self.someone_else_can_play(view) {
+                    return self.throwaway_hint(view);
+                }
+            }
+            // if anything is totally useless, discard it
+            if let Some(i) = self.find_useless_card(view, my_cards) {
+                return TurnChoice::Discard(i);
+            }
+
             // All cards are plausibly useful.
             // Play the best discardable card, according to the ordering induced by comparing
             //   (is in another hand, is dispensable, value)

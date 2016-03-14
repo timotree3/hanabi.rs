@@ -59,9 +59,12 @@ pub fn simulate_once<'a>(
         // TODO: do some stuff
         debug!("State:\n{}", game);
     }
-    game.score()
+    let score = game.score();
+    debug!("SCORED: {:?}", score);
+    score
 }
 
+// TODO: multithreaded
 pub fn simulate<'a>(
         opts: &GameOptions,
         strat_configs: &Vec<Box<StrategyConfig + 'a>>,
@@ -73,6 +76,7 @@ pub fn simulate<'a>(
     let mut non_perfect_seeds = Vec::new();
 
     let first_seed = first_seed_opt.unwrap_or(rand::thread_rng().next_u32());
+    info!("Initial seed: {}\n", first_seed);
     let mut histogram = HashMap::<Score, usize>::new();
     for i in 0..n_trials {
         if (i > 0) && (i % 1000 == 0) {
@@ -81,7 +85,6 @@ pub fn simulate<'a>(
         }
         let seed = first_seed + i;
         let score = simulate_once(&opts, strat_configs, Some(seed));
-        debug!("Scored: {:?}", score);
         let count = histogram.get(&score).unwrap_or(&0) + 1;
         histogram.insert(score, count);
         if score != 25 {

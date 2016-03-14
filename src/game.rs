@@ -30,7 +30,7 @@ pub fn get_count_for_value(value: &Value) -> usize {
 
 pub type Player = u32;
 
-#[derive(Debug,Clone,PartialEq)]
+#[derive(Debug,Clone,PartialEq,Eq,Hash)]
 pub struct Card {
     pub color: Color,
     pub value: Value,
@@ -520,10 +520,13 @@ pub struct GameStateView<'a> {
     pub board: &'a BoardState,
 }
 impl <'a> GameStateView<'a> {
-    pub fn has_card(&self, player: &Player, card: &Card) -> bool {
+    pub fn get_hand(&self, player: &Player) -> &Cards {
         assert!(self.player != *player, "Cannot query about your own cards!");
-        let state = self.other_player_states.get(player).unwrap();
-        for other_card in &state.hand {
+        &self.other_player_states.get(player).unwrap().hand
+    }
+
+    pub fn has_card(&self, player: &Player, card: &Card) -> bool {
+        for other_card in self.get_hand(player) {
             if *card == *other_card {
                 return true;
             }

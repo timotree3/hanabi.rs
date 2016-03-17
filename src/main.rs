@@ -84,20 +84,10 @@ fn main() {
     };
 
     // TODO: make this configurable
-    // let strategy = strategies::examples::AlwaysPlayConfig;
-    // let strategy = strategies::examples::RandomStrategyConfig {
-    //     hint_probability: 0.4,
-    //     play_probability: 0.2,
-    // };
-    let strategy = strategies::cheating::CheatingStrategyConfig::new();
-    if n == 1 {
-        simulator::simulate_symmetric_once(&opts, strategy, seed);
-    } else {
-        simulator::simulate_symmetric(&opts, strategy, n, seed);
-    }
-
-    // simulator::simulate_symmetric_once(
-    //     &opts, Some(999),
-    //     strategies::cheating::CheatingStrategyConfig::new(),
-    // );
+    let strategy_config = strategies::examples::RandomStrategyConfig {
+        hint_probability: 0.4,
+        play_probability: 0.2,
+    };
+    // let strategy_config = strategies::cheating::CheatingStrategyConfig::new();
+    simulator::simulate(&opts, &strategy_config, seed, n);
 }

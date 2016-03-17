@@ -18,31 +18,44 @@ use game::*;
 //  - discard the first card
 
 #[allow(dead_code)]
-#[derive(Clone)]
-pub struct CheatingStrategyConfig {
-    player_states_cheat: Rc<RefCell<HashMap<Player, Cards>>>,
-}
+pub struct CheatingStrategyConfig;
 
 impl CheatingStrategyConfig {
     pub fn new() -> CheatingStrategyConfig {
-        CheatingStrategyConfig {
+        CheatingStrategyConfig
+    }
+}
+impl GameStrategyConfig for CheatingStrategyConfig {
+    fn initialize(&self, _: &GameOptions) -> Box<GameStrategy> {
+        Box::new(CheatingStrategy::new())
+    }
+}
+
+pub struct CheatingStrategy {
+    player_states_cheat: Rc<RefCell<HashMap<Player, Cards>>>,
+}
+
+impl CheatingStrategy {
+    pub fn new() -> CheatingStrategy {
+        CheatingStrategy {
             player_states_cheat: Rc::new(RefCell::new(HashMap::new())),
         }
     }
 }
-impl <'a> StrategyConfig for CheatingStrategyConfig {
-    fn initialize(&self, player: Player, _: &GameStateView) -> Box<Strategy> {
-        Box::new(CheatingStrategy {
+impl GameStrategy for CheatingStrategy {
+    fn initialize(&self, player: Player, _: &GameStateView) -> Box<PlayerStrategy> {
+        Box::new(CheatingPlayerStrategy {
             player_states_cheat: self.player_states_cheat.clone(),
             me: player,
         })
     }
 }
-pub struct CheatingStrategy {
+
+pub struct CheatingPlayerStrategy {
     player_states_cheat: Rc<RefCell<HashMap<Player, Cards>>>,
     me: Player,
 }
-impl CheatingStrategy {
+impl CheatingPlayerStrategy {
     // help next player cheat!
     fn inform_next_player_cards(&self, view: &GameStateView) {
         let next = view.board.player_to_left(&self.me);
@@ -131,7 +144,7 @@ impl CheatingStrategy {
         false
     }
 }
-impl Strategy for CheatingStrategy {
+impl PlayerStrategy for CheatingPlayerStrategy {
     fn decide(&mut self, view: &GameStateView) -> TurnChoice {
         self.inform_next_player_cards(view);
         if view.board.turn <= view.board.num_players {

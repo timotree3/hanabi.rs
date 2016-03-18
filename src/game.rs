@@ -173,7 +173,7 @@ impl fmt::Display for Discard {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub enum Hinted {
     Color(Color),
     Value(Value),
@@ -187,24 +187,34 @@ impl fmt::Display for Hinted {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub struct Hint {
     pub player: Player,
     pub hinted: Hinted,
 }
 
 // represents the choice a player made in a given turn
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub enum TurnChoice {
     Hint(Hint),
     Discard(usize),
     Play(usize),
 }
 
+// represents what happened in a turn
+#[derive(Debug,Clone)]
+pub enum TurnResult {
+    Hint(Vec<usize>),
+    Discard(Card),
+    Play(Card, bool),
+}
+
 // represents a turn taken in the game
-pub struct Turn<'a> {
-    pub player: &'a Player,
-    pub choice: &'a TurnChoice,
+#[derive(Debug)]
+pub struct Turn {
+    pub player: Player,
+    pub choice: TurnChoice,
+    pub result: TurnResult,
 }
 
 // represents possible settings for the game
@@ -262,7 +272,8 @@ impl PlayerState {
         self.info.push(CardInfo::new());
     }
 
-    pub fn reveal(&mut self, hinted: &Hinted) {
+    pub fn reveal(&mut self, hinted: &Hinted) -> Vec<usize> {
+        let mut indices = Vec::new();
         match hinted {
             &Hinted::Color(ref color) => {
                 let mut i = 0;
@@ -271,6 +282,7 @@ impl PlayerState {
                         color,
                         card.color == *color
                     );
+                    indices.push(i);
                     i += 1;
                 }
             }
@@ -281,11 +293,13 @@ impl PlayerState {
                         value,
                         card.value == *value
                     );
+                    indices.push(i);
                     i += 1;
                 }
             }
 
         }
+        indices
     }
 }
 
@@ -327,8 +341,7 @@ pub struct BoardState {
     pub hints_remaining: u32,
     pub lives_total: u32,
     pub lives_remaining: u32,
-    // TODO:
-    // pub turn_history: Vec<TurnChoice>,
+    pub turn_history: Vec<Turn>,
     // only relevant when deck runs out
     pub deckless_turns_remaining: u32,
 }
@@ -351,6 +364,7 @@ impl BoardState {
             hints_remaining: opts.num_hints,
             lives_total: opts.num_lives,
             lives_remaining: opts.num_lives,
+            turn_history: Vec::new(),
             // number of turns to play with deck length ran out
             deckless_turns_remaining: opts.num_players + 1,
         }
@@ -635,60 +649,67 @@ impl GameState {
         }
     }
 
-    pub fn process_choice(&mut self, choice: &TurnChoice) {
+    pub fn process_choice(&mut self, choice: TurnChoice) -> TurnResult {
         debug!("Player {}'s move", self.board.player);
-        match choice {
-            &TurnChoice::Hint(ref hint) => {
-                assert!(self.board.hints_remaining > 0,
-                        "Tried to hint with no hints remaining");
-                self.board.hints_remaining -= 1;
-                debug!("Hint to player {}, about {}", hint.player, hint.hinted);
+        let turn_result = {
+            match choice {
+                TurnChoice::Hint(ref hint) => {
+                    assert!(self.board.hints_remaining > 0,
+                            "Tried to hint with no hints remaining");
+                    self.board.hints_remaining -= 1;
+                    debug!("Hint to player {}, about {}", hint.player, hint.hinted);
 
-                assert!(self.board.player != hint.player,
-                        format!("Player {} gave a hint to himself", hint.player));
+                    assert!(self.board.player != hint.player,
+                            format!("Player {} gave a hint to himself", hint.player));
 
-                let ref mut state = self.player_states.get_mut(&hint.player).unwrap();
-                state.reveal(&hint.hinted);
-            }
-            &TurnChoice::Discard(index) => {
-                let card = self.take_from_hand(index);
-                debug!("Discard card in position {}, which is {}", index, card);
-                self.board.discard.place(card);
+                    let ref mut state = self.player_states.get_mut(&hint.player).unwrap();
+                    let indices = state.reveal(&hint.hinted);
+                    TurnResult::Hint(indices)
+                }
+                TurnChoice::Discard(index) => {
+                    let card = self.take_from_hand(index);
+                    debug!("Discard card in position {}, which is {}", index, card);
+                    self.board.discard.place(card.clone());
 
-                self.board.try_add_hint();
-            }
-            &TurnChoice::Play(index) => {
-                let card = self.take_from_hand(index);
+                    self.board.try_add_hint();
+                    TurnResult::Discard(card)
+                }
+                TurnChoice::Play(index) => {
+                    let card = self.take_from_hand(index);
 
-                debug!(
-                    "Playing card at position {}, which is {}",
-                    index, card
-                );
-
-                if self.board.is_playable(&card) {
-                    let finished = {
-                        let firework = self.board.get_firework_mut(&card.color);
-                        debug!("Successfully played {}!", card);
-                        let finished = card.value == FINAL_VALUE;
-                        if finished {
-                            debug!("Firework complete for {}!", card.color);
-                        }
-                        firework.place(card);
-                        finished
-                    };
-                    if finished {
-                        self.board.try_add_hint();
-                    }
-                } else {
-                    self.board.discard.place(card);
-                    self.board.lives_remaining -= 1;
                     debug!(
-                        "Removing a life! Lives remaining: {}",
-                        self.board.lives_remaining
+                        "Playing card at position {}, which is {}",
+                        index, card
                     );
+                    let playable = self.board.is_playable(&card);
+                    if playable {
+                        {
+                            let firework = self.board.get_firework_mut(&card.color);
+                            debug!("Successfully played {}!", card);
+                            firework.place(card.clone());
+                        }
+                        if card.value == FINAL_VALUE {
+                            debug!("Firework complete for {}!", card.color);
+                            self.board.try_add_hint();
+                        }
+                    } else {
+                        self.board.discard.place(card.clone());
+                        self.board.lives_remaining -= 1;
+                        debug!(
+                            "Removing a life! Lives remaining: {}",
+                            self.board.lives_remaining
+                        );
+                    }
+                    TurnResult::Play(card, playable)
                 }
             }
-        }
+        };
+        let turn = Turn {
+            player: self.board.player.clone(),
+            result: turn_result.clone(),
+            choice: choice,
+        };
+        self.board.turn_history.push(turn);
 
         self.replenish_hand();
 
@@ -702,5 +723,6 @@ impl GameState {
         };
         assert_eq!((self.board.turn - 1) % self.board.num_players, self.board.player);
 
+        turn_result
     }
 }

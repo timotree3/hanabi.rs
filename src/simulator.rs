@@ -50,11 +50,12 @@ pub fn simulate_once(
             strategy.decide(&game.get_view(player))
         };
 
-        game.process_choice(&choice);
+        let turn_result = game.process_choice(choice.clone());
 
         let turn = Turn {
-            player: &player,
-            choice: &choice,
+            player: player,
+            choice: choice,
+            result: turn_result,
         };
 
         for player in game.get_players() {
@@ -62,7 +63,6 @@ pub fn simulate_once(
             strategy.update(&turn, &game.get_view(player));
         }
 
-        // TODO: do some stuff
         debug!("State:\n{}", game);
     }
     let score = game.score();
@@ -117,7 +117,6 @@ impl fmt::Display for Histogram {
     }
 }
 
-// TODO: multithreaded
 pub fn simulate<T>(
         opts: &GameOptions,
         strat_config: &T,

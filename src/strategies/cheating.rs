@@ -43,7 +43,12 @@ impl CheatingStrategy {
     }
 }
 impl GameStrategy for CheatingStrategy {
-    fn initialize(&self, player: Player, _: &GameStateView) -> Box<PlayerStrategy> {
+    fn initialize(&self, player: Player, view: &GameStateView) -> Box<PlayerStrategy> {
+        for (player, state) in &view.other_player_states {
+            self.player_states_cheat.borrow_mut().insert(
+                *player, state.hand.clone()
+            );
+        }
         Box::new(CheatingPlayerStrategy {
             player_states_cheat: self.player_states_cheat.clone(),
             me: player,
@@ -56,9 +61,9 @@ pub struct CheatingPlayerStrategy {
     me: Player,
 }
 impl CheatingPlayerStrategy {
-    // help next player cheat!
-    fn inform_next_player_cards(&self, view: &GameStateView) {
-        let next = view.board.player_to_left(&self.me);
+    // last player might've drawn a new card, let him know!
+    fn inform_last_player_cards(&self, view: &GameStateView) {
+        let next = view.board.player_to_right(&self.me);
         self.player_states_cheat.borrow_mut().insert(
             next, view.other_player_states.get(&next).unwrap().hand.clone()
         );
@@ -146,21 +151,45 @@ impl CheatingPlayerStrategy {
 }
 impl PlayerStrategy for CheatingPlayerStrategy {
     fn decide(&mut self, view: &GameStateView) -> TurnChoice {
-        self.inform_next_player_cards(view);
-        if view.board.turn <= view.board.num_players {
-            // don't know my cards yet, just give a random hint
-            return self.throwaway_hint(view);
-        }
+        self.inform_last_player_cards(view);
 
         let states = self.player_states_cheat.borrow();
         let my_cards = states.get(&self.me).unwrap();
-        let mut playable_cards = my_cards.iter().filter(|card| {
+        let playable_cards = my_cards.iter().filter(|card| {
             view.board.is_playable(card)
-        }).peekable();
+        }).collect::<Vec<_>>();
 
-        if playable_cards.peek() == None {
-            // if view.board.deck_size() > 10 {
-            if view.board.discard.cards.len() < 5 {
+        let mut should_play = true;
+        if playable_cards.len() == 0 {
+            should_play = false;
+        }
+        // if (playable_cards.len() == 1) &&
+        //    (view.board.deck_size() == 1) &&
+        //    (view.board.hints_remaining > 1) {
+        //     return self.throwaway_hint(view);
+        // }
+
+        if should_play {
+            // play the best playable card
+            // the higher the play_score, the better to play
+            let mut play_card = None;
+            let mut play_score = -1;
+
+            for card in playable_cards {
+                let score = self.get_play_score(view, card);
+                if score > play_score {
+                    play_card = Some(card);
+                    play_score = score;
+                }
+            }
+
+            let index = my_cards.iter().position(|card| {
+                card == play_card.unwrap()
+            }).unwrap();
+            TurnChoice::Play(index)
+        } else {
+            // 50 total, 25 to play, 20 in hand
+            if view.board.discard.cards.len() < 6 {
                 // if anything is totally useless, discard it
                 if let Some(i) = self.find_useless_card(view, my_cards) {
                     return TurnChoice::Discard(i);
@@ -174,6 +203,7 @@ impl PlayerStrategy for CheatingPlayerStrategy {
                     return self.throwaway_hint(view);
                 }
             }
+
             // if anything is totally useless, discard it
             if let Some(i) = self.find_useless_card(view, my_cards) {
                 return TurnChoice::Discard(i);
@@ -210,25 +240,6 @@ impl PlayerStrategy for CheatingPlayerStrategy {
             } else {
                 panic!("This shouldn't happen!  No discardable card");
             }
-        } else {
-            // play the best playable card
-            // the higher the play_score, the better to play
-            let mut play_card = None;
-            let mut play_score = -1;
-
-            while playable_cards.peek().is_some() {
-                let next_card = playable_cards.next().unwrap();
-                let next_play_score = self.get_play_score(view, next_card);
-                if next_play_score > play_score {
-                    play_card = Some(next_card);
-                    play_score = next_play_score;
-                }
-            }
-
-            let index = my_cards.iter().position(|card| {
-                card == play_card.unwrap()
-            }).unwrap();
-            TurnChoice::Play(index)
         }
     }
     fn update(&mut self, _: &Turn, _: &GameStateView) {

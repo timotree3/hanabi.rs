@@ -475,7 +475,7 @@ impl BoardState {
         (player + 1) % self.num_players
     }
     pub fn player_to_right(&self, player: &Player) -> Player {
-        (player - 1) % self.num_players
+        (player + self.num_players - 1) % self.num_players
     }
 
     pub fn is_over(&self) -> bool {

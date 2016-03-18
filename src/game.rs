@@ -52,38 +52,29 @@ pub type CardsInfo = Vec<CardInfo>;
 #[derive(Debug)]
 pub struct Firework {
     pub color: Color,
-    pub cards: Cards,
+    top: Value,
 }
 impl Firework {
     fn new(color: Color) -> Firework {
-        let mut cards = Cards::new();
-        // have a 0, so it's easier to implement
-        let card = Card::new(color, 0);
-        cards.push(card);
         Firework {
             color: color,
-            cards: cards,
+            top: 0,
         }
     }
 
-    fn top_value(&self) -> Value {
-        self.cards.last().unwrap().value
-    }
-
     fn desired_value(&self) -> Option<Value> {
-        if self.complete() { None } else { Some(self.top_value() + 1) }
+        if self.complete() { None } else { Some(self.top + 1) }
     }
 
     fn score(&self) -> usize {
-        // subtract one to account for the 0 we pushed
-        self.cards.len() - 1
+        (self.top as usize)
     }
 
     fn complete(&self) -> bool {
-        self.top_value() == FINAL_VALUE
+        self.top == FINAL_VALUE
     }
 
-    fn place(&mut self, card: Card) {
+    fn place(&mut self, card: &Card) {
         assert!(
             card.color == self.color,
             "Attempted to place card on firework of wrong color!"
@@ -93,7 +84,7 @@ impl Firework {
             "Attempted to place card of wrong value on firework!"
         );
 
-        self.cards.push(card);
+        self.top = card.value;
     }
 }
 impl fmt::Display for Firework {
@@ -101,7 +92,7 @@ impl fmt::Display for Firework {
         if self.complete() {
             write!(f, "{} firework complete!", self.color)
         } else {
-            write!(f, "{} firework at {}", self.color, self.top_value())
+            write!(f, "{} firework at {}", self.color, self.top)
         }
     }
 }
@@ -686,7 +677,7 @@ impl GameState {
                         {
                             let firework = self.board.get_firework_mut(&card.color);
                             debug!("Successfully played {}!", card);
-                            firework.place(card.clone());
+                            firework.place(&card);
                         }
                         if card.value == FINAL_VALUE {
                             debug!("Firework complete for {}!", card.color);

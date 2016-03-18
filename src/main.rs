@@ -2,6 +2,7 @@ extern crate getopts;
 #[macro_use]
 extern crate log;
 extern crate rand;
+extern crate crossbeam;
 
 mod game;
 mod simulator;
@@ -40,6 +41,7 @@ fn main() {
     let mut opts = Options::new();
     opts.optopt("l", "loglevel", "Log level, one of 'trace', 'debug', 'info', 'warn', and 'error'", "LOGLEVEL");
     opts.optopt("n", "ntrials", "Number of games to simulate", "NTRIALS");
+    opts.optopt("t", "nthreads", "Number of threads to use for simulation", "NTHREADS");
     opts.optopt("s", "seed", "Seed for PRNG (can only be used with n=1)", "SEED");
     opts.optflag("h", "help", "Print this help menu");
     let matches = match opts.parse(&args[1..]) {
@@ -75,7 +77,8 @@ fn main() {
 
     let seed = matches.opt_str("s").map(|seed_str| { u32::from_str(&seed_str).unwrap() });
 
-    // TODO: make these configurable
+    let n_threads = u32::from_str(&matches.opt_str("t").unwrap_or("1".to_string())).unwrap();
+
     let opts = game::GameOptions {
         num_players: 5,
         hand_size: 4,
@@ -84,10 +87,10 @@ fn main() {
     };
 
     // TODO: make this configurable
-    let strategy_config = strategies::examples::RandomStrategyConfig {
-        hint_probability: 0.4,
-        play_probability: 0.2,
-    };
-    // let strategy_config = strategies::cheating::CheatingStrategyConfig::new();
-    simulator::simulate(&opts, &strategy_config, seed, n);
+    // let strategy_config = strategies::examples::RandomStrategyConfig {
+    //     hint_probability: 0.4,
+    //     play_probability: 0.2,
+    // };
+    let strategy_config = strategies::cheating::CheatingStrategyConfig::new();
+    simulator::simulate(&opts, &strategy_config, seed, n, n_threads);
 }

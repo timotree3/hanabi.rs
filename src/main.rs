@@ -42,7 +42,7 @@ fn main() {
     opts.optopt("l", "loglevel", "Log level, one of 'trace', 'debug', 'info', 'warn', and 'error'", "LOGLEVEL");
     opts.optopt("n", "ntrials", "Number of games to simulate", "NTRIALS");
     opts.optopt("t", "nthreads", "Number of threads to use for simulation", "NTHREADS");
-    opts.optopt("s", "seed", "Seed for PRNG (can only be used with n=1)", "SEED");
+    opts.optopt("s", "seed", "Seed for PRNG", "SEED");
     opts.optopt("p", "nplayers", "Number of players", "NPLAYERS");
     opts.optflag("h", "help", "Print this help menu");
     let matches = match opts.parse(&args[1..]) {

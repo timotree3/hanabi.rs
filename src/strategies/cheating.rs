@@ -91,6 +91,8 @@ impl CheatingPlayerStrategy {
                 continue
             }
             if !view.board.is_dispensable(card) {
+                value += 20 - card.value;
+            } else if view.board.is_playable(card) {
                 value += 10 - card.value;
             } else {
                 value += 1;
@@ -111,15 +113,15 @@ impl CheatingPlayerStrategy {
                 if view.has_card(&player, card) {
                     let their_hand_value = self.hand_play_value(view, states.get(&player).unwrap());
                     // they can play this card, and have less urgent plays than i do
-                    if their_hand_value <= my_hand_value {
-                        return 1;
+                    if their_hand_value < my_hand_value {
+                        return 10 - (card.value as i32)
                     }
                 }
             }
         }
         // there are no hints
         // maybe value 5s more?
-        5 + (5 - (card.value as i32))
+        20 - (card.value as i32)
     }
 
     fn find_useless_card(&self, view: &GameStateView, hand: &Cards) -> Option<usize> {
@@ -161,17 +163,7 @@ impl PlayerStrategy for CheatingPlayerStrategy {
             view.board.is_playable(card)
         }).collect::<Vec<_>>();
 
-        let mut should_play = true;
-        if playable_cards.len() == 0 {
-            should_play = false;
-        }
-        // if (playable_cards.len() == 1) &&
-        //    (view.board.deck_size() == 1) &&
-        //    (view.board.hints_remaining > 1) {
-        //     return self.throwaway_hint(view);
-        // }
-
-        if should_play {
+        if playable_cards.len() > 0 {
             // play the best playable card
             // the higher the play_score, the better to play
             let mut play_card = None;
@@ -195,10 +187,10 @@ impl PlayerStrategy for CheatingPlayerStrategy {
             // we would not reach the final countdown round
             // e.g. 50 total, 25 to play, 20 in hand
             let discard_threshold =
-                view.board.total_cards as usize
-                - (COLORS.len() * VALUES.len())
-                - (view.board.num_players * view.board.hand_size) as usize;
-            if view.board.discard.cards.len() <= discard_threshold {
+                view.board.total_cards
+                - (COLORS.len() * VALUES.len()) as u32
+                - (view.board.num_players * view.board.hand_size);
+            if view.board.discard_size() <= discard_threshold {
                 // if anything is totally useless, discard it
                 if let Some(i) = self.find_useless_card(view, my_cards) {
                     return TurnChoice::Discard(i);
@@ -207,7 +199,7 @@ impl PlayerStrategy for CheatingPlayerStrategy {
 
             // hinting is better than discarding dead cards
             // (probably because it stalls the deck-drawing).
-            if view.board.hints_remaining > 1 {
+            if view.board.hints_remaining > 0 {
                 if self.someone_else_can_play(view) {
                     return self.throwaway_hint(view);
                 }
@@ -236,12 +228,6 @@ impl PlayerStrategy for CheatingPlayerStrategy {
                 }
             }
             if let Some(card) = discard_card {
-                if view.board.hints_remaining > 0 {
-                    if !view.can_see(card) {
-                        return self.throwaway_hint(view);
-                    }
-                }
-
                 let index = my_cards.iter().position(|iter_card| {
                     card == iter_card
                 }).unwrap();

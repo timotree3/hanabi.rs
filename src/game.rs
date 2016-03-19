@@ -463,6 +463,10 @@ impl BoardState {
         self.deck.len() as u32
     }
 
+    pub fn discard_size(&self) -> u32 {
+        self.discard.cards.len() as u32
+    }
+
     pub fn player_to_left(&self, player: &Player) -> Player {
         (player + 1) % self.num_players
     }

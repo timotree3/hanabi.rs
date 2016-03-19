@@ -159,14 +159,21 @@ pub fn simulate<T>(
         let mut histogram = Histogram::new();
         for join_handle in join_handles {
             let (thread_non_perfect_seeds, thread_histogram) = join_handle.join();
-            info!("Thread joined");
             non_perfect_seeds.extend(thread_non_perfect_seeds.iter());
             histogram.merge(thread_histogram);
         }
 
-        non_perfect_seeds.sort();
-        info!("Seeds with non-perfect score: {:?}", non_perfect_seeds);
         info!("Score histogram:\n{}", histogram);
+
+        non_perfect_seeds.sort();
+        // info!("Seeds with non-perfect score: {:?}", non_perfect_seeds);
+        if non_perfect_seeds.len() > 0 {
+            info!("Example seed with non-perfect score: {}",
+                  non_perfect_seeds.get(0).unwrap().1);
+        }
+
+        let percentage = (n_trials - non_perfect_seeds.len() as u32) as f32 / n_trials as f32;
+        info!("Percentage perfect: {:?}%", percentage);
         let average = histogram.average();
         info!("Average score: {:?}", average);
         average

@@ -43,6 +43,7 @@ fn main() {
     opts.optopt("n", "ntrials", "Number of games to simulate", "NTRIALS");
     opts.optopt("t", "nthreads", "Number of threads to use for simulation", "NTHREADS");
     opts.optopt("s", "seed", "Seed for PRNG (can only be used with n=1)", "SEED");
+    opts.optopt("p", "nplayers", "Number of players", "NPLAYERS");
     opts.optflag("h", "help", "Print this help menu");
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => { m }
@@ -65,7 +66,10 @@ fn main() {
         "info"  => { log::LogLevelFilter::Info }
         "warn"  => { log::LogLevelFilter::Warn }
         "error" => { log::LogLevelFilter::Error }
-        _       => { panic!("Unexpected log level argument {}", log_level_str); }
+        _       => {
+            print_usage(&program, opts);
+            panic!("Unexpected log level argument {}", log_level_str);
+        }
     };
 
     log::set_logger(|max_log_level| {
@@ -79,11 +83,22 @@ fn main() {
 
     let n_threads = u32::from_str(&matches.opt_str("t").unwrap_or("1".to_string())).unwrap();
 
+    let n_players = u32::from_str(&matches.opt_str("p").unwrap_or("4".to_string())).unwrap();
+    let hand_size = match n_players {
+        2 => 5,
+        3 => 5,
+        4 => 4,
+        5 => 4,
+        _ => { panic!("There should be 2 to 5 players, not {}", n_players); }
+    };
+
     let opts = game::GameOptions {
-        num_players: 5,
-        hand_size: 4,
+        num_players: n_players,
+        hand_size: hand_size,
         num_hints: 8,
         num_lives: 3,
+        // hanabi rules are a bit ambiguous about whether you can give hints that match 0 cards
+        allow_empty_hints: false,
     };
 
     // TODO: make this configurable

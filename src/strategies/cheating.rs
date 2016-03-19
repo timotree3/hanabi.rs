@@ -71,14 +71,16 @@ impl CheatingPlayerStrategy {
 
     // give a throwaway hint - we only do this when we have nothing to do
     fn throwaway_hint(&self, view: &GameStateView) -> TurnChoice {
+        let hint_player = view.board.player_to_left(&self.me);
+        let hint_card = &view.get_hand(&hint_player).first().unwrap();
         TurnChoice::Hint(Hint {
-                player: view.board.player_to_left(&self.me),
-                hinted: Hinted::Value(1)
+            player: hint_player,
+            hinted: Hinted::Value(hint_card.value)
         })
     }
 
     // given a hand of cards, represents how badly it will need to play things
-    fn hand_play_value(&self, view: &GameStateView, hand: &Cards/*, all_viewable: HashMap<Color, <Value, usize>> */) -> u32 {
+    fn hand_play_value(&self, view: &GameStateView, hand: &Cards/*, all_viewable: HashMap<Color, <Value, u32>> */) -> u32 {
         // dead = 0 points
         // indispensible = 5 + (5 - value) points
         // playable, not in another hand = 2 point
@@ -188,8 +190,15 @@ impl PlayerStrategy for CheatingPlayerStrategy {
             }).unwrap();
             TurnChoice::Play(index)
         } else {
-            // 50 total, 25 to play, 20 in hand
-            if view.board.discard.cards.len() < 6 {
+            // discard threshold is how many cards we're willing to discard
+            // such that if we only played,
+            // we would not reach the final countdown round
+            // e.g. 50 total, 25 to play, 20 in hand
+            let discard_threshold =
+                view.board.total_cards as usize
+                - (COLORS.len() * VALUES.len())
+                - (view.board.num_players * view.board.hand_size) as usize;
+            if view.board.discard.cards.len() <= discard_threshold {
                 // if anything is totally useless, discard it
                 if let Some(i) = self.find_useless_card(view, my_cards) {
                     return TurnChoice::Discard(i);

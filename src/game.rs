@@ -19,7 +19,7 @@ pub type Value = u32;
 pub const VALUES : [Value; 5] = [1, 2, 3, 4, 5];
 pub const FINAL_VALUE : Value = 5;
 
-pub fn get_count_for_value(value: &Value) -> usize {
+pub fn get_count_for_value(value: &Value) -> u32 {
     match *value {
         1         => 3,
         2 | 3 | 4 => 2,
@@ -49,10 +49,10 @@ impl fmt::Display for Card {
 pub type Cards = Vec<Card>;
 pub type CardsInfo = Vec<CardInfo>;
 
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub struct Firework {
     pub color: Color,
-    top: Value,
+    pub top: Value,
 }
 impl Firework {
     fn new(color: Color) -> Firework {
@@ -66,8 +66,8 @@ impl Firework {
         if self.complete() { None } else { Some(self.top + 1) }
     }
 
-    fn score(&self) -> usize {
-        (self.top as usize)
+    fn score(&self) -> Score {
+        self.top
     }
 
     fn complete(&self) -> bool {
@@ -83,7 +83,6 @@ impl Firework {
             Some(card.value) == self.desired_value(),
             "Attempted to place card of wrong value on firework!"
         );
-
         self.top = card.value;
     }
 }
@@ -100,7 +99,7 @@ impl fmt::Display for Firework {
 #[derive(Debug)]
 pub struct Discard {
     pub cards: Cards,
-    counts: HashMap<Color, HashMap<Value, usize>>,
+    counts: HashMap<Color, HashMap<Value, u32>>,
 }
 impl Discard {
     fn new() -> Discard {
@@ -118,7 +117,7 @@ impl Discard {
         }
     }
 
-    fn get_count(&self, card: &Card) -> usize {
+    fn get_count(&self, card: &Card) -> u32 {
         let color_count = self.counts.get(card.color).unwrap();
         color_count.get(&card.value).unwrap().clone()
     }
@@ -127,7 +126,7 @@ impl Discard {
         self.remaining(card) == 0
     }
 
-    fn remaining(&self, card: &Card) -> usize {
+    fn remaining(&self, card: &Card) -> u32 {
         let count = self.get_count(&card);
         get_count_for_value(&card.value) - count
     }
@@ -195,13 +194,13 @@ pub enum TurnChoice {
 // represents what happened in a turn
 #[derive(Debug,Clone)]
 pub enum TurnResult {
-    Hint(Vec<usize>),
-    Discard(Card),
-    Play(Card, bool),
+    Hint(Vec<usize>), // indices revealed
+    Discard(Card),    // card discarded
+    Play(Card, bool), // card played, whether it succeeded
 }
 
 // represents a turn taken in the game
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub struct Turn {
     pub player: Player,
     pub choice: TurnChoice,
@@ -216,8 +215,8 @@ pub struct GameOptions {
     pub num_hints: u32,
     // when hits 0, you lose
     pub num_lives: u32,
-    // TODO:
-    // pub allow_empty_hints: bool,
+    // whether to allow hints that reveal no cards
+    pub allow_empty_hints: bool,
 }
 
 // The state of a given player:  all other players may see this
@@ -269,22 +268,18 @@ impl PlayerState {
             &Hinted::Color(ref color) => {
                 let mut i = 0;
                 for card in &self.hand {
-                    self.info[i].color_info.mark(
-                        color,
-                        card.color == *color
-                    );
-                    indices.push(i);
+                    let matches = card.color == *color;
+                    self.info[i].color_info.mark(color, matches);
+                    if matches { indices.push(i); }
                     i += 1;
                 }
             }
             &Hinted::Value(ref value) => {
                 let mut i = 0;
                 for card in &self.hand {
-                    self.info[i].value_info.mark(
-                        value,
-                        card.value == *value
-                    );
-                    indices.push(i);
+                    let matches = card.value == *value;
+                    self.info[i].value_info.mark(value, matches);
+                    if matches { indices.push(i); }
                     i += 1;
                 }
             }
@@ -317,6 +312,7 @@ fn new_deck(seed: u32) -> Cards {
 #[derive(Debug)]
 pub struct BoardState {
     deck: Cards,
+    pub total_cards: u32,
     pub discard: Discard,
     pub fireworks: HashMap<Color, Firework>,
 
@@ -330,6 +326,7 @@ pub struct BoardState {
 
     pub hints_total: u32,
     pub hints_remaining: u32,
+    pub allow_empty_hints: bool,
     pub lives_total: u32,
     pub lives_remaining: u32,
     pub turn_history: Vec<Turn>,
@@ -342,15 +339,19 @@ impl BoardState {
         for color in COLORS.iter() {
             fireworks.insert(color, Firework::new(color));
         }
+        let deck = new_deck(seed);
+        let total_cards = deck.len() as u32;
 
         BoardState {
-            deck: new_deck(seed),
+            deck: deck,
+            total_cards: total_cards,
             fireworks: fireworks,
             discard: Discard::new(),
             num_players: opts.num_players,
             hand_size: opts.hand_size,
             player: 0,
             turn: 1,
+            allow_empty_hints: opts.allow_empty_hints,
             hints_total: opts.num_hints,
             hints_remaining: opts.num_hints,
             lives_total: opts.num_lives,
@@ -458,8 +459,8 @@ impl BoardState {
         score as u32
     }
 
-    pub fn deck_size(&self) -> usize {
-        self.deck.len()
+    pub fn deck_size(&self) -> u32 {
+        self.deck.len() as u32
     }
 
     pub fn player_to_left(&self, player: &Player) -> Player {
@@ -556,16 +557,17 @@ pub struct GameState {
 }
 impl fmt::Display for GameState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(f.write_str("==========================\n"));
+        try!(f.write_str("\n"));
+        try!(f.write_str("======\n"));
         try!(f.write_str("Hands:\n"));
-        try!(f.write_str("==========================\n"));
+        try!(f.write_str("======\n"));
         for player in self.board.get_players() {
             let state = &self.player_states.get(&player).unwrap();
             try!(f.write_str(&format!("player {} {}\n", player, state)));
         }
-        try!(f.write_str("==========================\n"));
+        try!(f.write_str("======\n"));
         try!(f.write_str("Board:\n"));
-        try!(f.write_str("==========================\n"));
+        try!(f.write_str("======\n"));
         try!(f.write_str(&format!("{}", self.board)));
         Ok(())
     }
@@ -599,7 +601,6 @@ impl GameState {
     }
 
     pub fn is_over(&self) -> bool {
-        // TODO: add condition that fireworks cannot be further completed?
         self.board.is_over()
     }
 
@@ -640,8 +641,7 @@ impl GameState {
         }
     }
 
-    pub fn process_choice(&mut self, choice: TurnChoice) -> TurnResult {
-        debug!("Player {}'s move", self.board.player);
+    pub fn process_choice(&mut self, choice: TurnChoice) -> Turn {
         let turn_result = {
             match choice {
                 TurnChoice::Hint(ref hint) => {
@@ -655,6 +655,9 @@ impl GameState {
 
                     let ref mut state = self.player_states.get_mut(&hint.player).unwrap();
                     let indices = state.reveal(&hint.hinted);
+                    if (!self.board.allow_empty_hints) && (indices.len() == 0) {
+                        panic!("Tried hinting an empty hint");
+                    }
                     TurnResult::Hint(indices)
                 }
                 TurnChoice::Discard(index) => {
@@ -697,10 +700,10 @@ impl GameState {
         };
         let turn = Turn {
             player: self.board.player.clone(),
-            result: turn_result.clone(),
+            result: turn_result,
             choice: choice,
         };
-        self.board.turn_history.push(turn);
+        self.board.turn_history.push(turn.clone());
 
         self.replenish_hand();
 
@@ -714,6 +717,6 @@ impl GameState {
         };
         assert_eq!((self.board.turn - 1) % self.board.num_players, self.board.player);
 
-        turn_result
+        turn
     }
 }

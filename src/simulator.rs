@@ -40,40 +40,41 @@ pub fn simulate_once(
         );
     }
 
-    debug!("Initial state:\n{}", game);
-
     while !game.is_over() {
-        debug!("Turn {}", game.board.turn);
         let player = game.board.player;
+
+        debug!("");
+        debug!("=======================================================");
+        debug!("Turn {}, Player {} to go", game.board.turn, player);
+        debug!("=======================================================");
+        debug!("{}", game);
+
+
         let choice = {
             let mut strategy = strategies.get_mut(&player).unwrap();
             strategy.decide(&game.get_view(player))
         };
 
-        let turn_result = game.process_choice(choice.clone());
-
-        let turn = Turn {
-            player: player,
-            choice: choice,
-            result: turn_result,
-        };
+        let turn = game.process_choice(choice);
 
         for player in game.get_players() {
             let mut strategy = strategies.get_mut(&player).unwrap();
             strategy.update(&turn, &game.get_view(player));
         }
 
-        debug!("State:\n{}", game);
     }
+    debug!("");
+    debug!("=======================================================");
+    debug!("Final state:\n{}", game);
     let score = game.score();
     debug!("SCORED: {:?}", score);
     score
 }
 
 struct Histogram {
-    pub hist: HashMap<Score, usize>,
+    pub hist: HashMap<Score, u32>,
     pub sum: Score,
-    pub total_count: usize,
+    pub total_count: u32,
 }
 impl Histogram {
     pub fn new() -> Histogram {
@@ -83,7 +84,7 @@ impl Histogram {
             total_count: 0,
         }
     }
-    fn insert_many(&mut self, val: Score, count: usize) {
+    fn insert_many(&mut self, val: Score, count: u32) {
         let new_count = self.get_count(&val) + count;
         self.hist.insert(val, new_count);
         self.sum += val * (count as u32);
@@ -92,7 +93,7 @@ impl Histogram {
     pub fn insert(&mut self, val: Score) {
         self.insert_many(val, 1);
     }
-    pub fn get_count(&self, val: &Score) -> usize {
+    pub fn get_count(&self, val: &Score) -> u32 {
         *self.hist.get(&val).unwrap_or(&0)
     }
     pub fn average(&self) -> f32 {

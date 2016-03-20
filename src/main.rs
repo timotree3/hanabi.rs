@@ -39,12 +39,26 @@ fn main() {
     let program = args[0].clone();
 
     let mut opts = Options::new();
-    opts.optopt("l", "loglevel", "Log level, one of 'trace', 'debug', 'info', 'warn', and 'error'", "LOGLEVEL");
-    opts.optopt("n", "ntrials", "Number of games to simulate", "NTRIALS");
-    opts.optopt("t", "nthreads", "Number of threads to use for simulation", "NTHREADS");
-    opts.optopt("s", "seed", "Seed for PRNG", "SEED");
-    opts.optopt("p", "nplayers", "Number of players", "NPLAYERS");
-    opts.optflag("h", "help", "Print this help menu");
+    opts.optopt("l", "loglevel",
+                "Log level, one of 'trace', 'debug', 'info', 'warn', and 'error'",
+                "LOGLEVEL");
+    opts.optopt("n", "ntrials",
+                "Number of games to simulate",
+                "NTRIALS");
+    opts.optopt("t", "nthreads",
+                "Number of threads to use for simulation",
+                "NTHREADS");
+    opts.optopt("s", "seed",
+                "Seed for PRNG",
+                "SEED");
+    opts.optopt("p", "nplayers",
+                "Number of players",
+                "NPLAYERS");
+    opts.optopt("g", "strategy",
+                "Which strategy to use.  One of 'random' and 'cheat'",
+                "STRATEGY");
+    opts.optflag("h", "help",
+                 "Print this help menu");
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => { m }
         Err(f) => {
@@ -92,7 +106,7 @@ fn main() {
         _ => { panic!("There should be 2 to 5 players, not {}", n_players); }
     };
 
-    let opts = game::GameOptions {
+    let game_opts = game::GameOptions {
         num_players: n_players,
         hand_size: hand_size,
         num_hints: 8,
@@ -101,11 +115,22 @@ fn main() {
         allow_empty_hints: false,
     };
 
-    // TODO: make this configurable
-    // let strategy_config = strategies::examples::RandomStrategyConfig {
-    //     hint_probability: 0.4,
-    //     play_probability: 0.2,
-    // };
-    let strategy_config = strategies::cheating::CheatingStrategyConfig::new();
-    simulator::simulate(&opts, &strategy_config, seed, n, n_threads);
+    let strategy_str : &str = &matches.opt_str("g").unwrap_or("cheat".to_string());
+    let strategy_config : Box<simulator::GameStrategyConfig + Sync> = match strategy_str {
+        "random" => {
+            Box::new(strategies::examples::RandomStrategyConfig {
+                hint_probability: 0.4,
+                play_probability: 0.2,
+            }) as Box<simulator::GameStrategyConfig + Sync>
+        },
+        "cheat" => {
+            Box::new(strategies::cheating::CheatingStrategyConfig::new())
+                as Box<simulator::GameStrategyConfig + Sync>
+        },
+        _ => {
+            print_usage(&program, opts);
+            panic!("Unexpected strategy argument {}", strategy_str);
+        },
+    };
+    simulator::simulate(&game_opts, strategy_config, seed, n, n_threads);
 }

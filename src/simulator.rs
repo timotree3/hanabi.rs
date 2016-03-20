@@ -1,8 +1,9 @@
 use rand::{self, Rng};
-use game::*;
 use std::collections::HashMap;
 use std::fmt;
 use crossbeam;
+
+use game::*;
 
 // Traits to implement for any valid Hanabi strategy
 
@@ -118,9 +119,9 @@ impl fmt::Display for Histogram {
     }
 }
 
-pub fn simulate<T>(
+pub fn simulate<T: ?Sized>(
         opts: &GameOptions,
-        strat_config: &T,
+        strat_config: Box<T>,
         first_seed_opt: Option<u32>,
         n_trials: u32,
         n_threads: u32,
@@ -128,6 +129,7 @@ pub fn simulate<T>(
 
     let first_seed = first_seed_opt.unwrap_or(rand::thread_rng().next_u32());
 
+    let strat_config_ref = &strat_config;
     crossbeam::scope(|scope| {
         let mut join_handles = Vec::new();
         for i in 0..n_threads {
@@ -146,7 +148,7 @@ pub fn simulate<T>(
                             i, seed-start, histogram.average()
                         );
                     }
-                    let score = simulate_once(&opts, strat_config.initialize(&opts), Some(seed));
+                    let score = simulate_once(&opts, strat_config_ref.initialize(&opts), Some(seed));
                     histogram.insert(score);
                     if score != 25 { non_perfect_seeds.push((score, seed)); }
                 }

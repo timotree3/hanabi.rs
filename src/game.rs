@@ -3,165 +3,10 @@ use std::collections::HashMap;
 use std::fmt;
 
 use info::*;
-
-/*
-* Type definitions
-*/
-
-pub type Color = &'static str;
-pub const COLORS: [Color; 5] = ["red", "yellow", "green", "blue", "white"];
-pub fn display_color(color: Color) -> char {
-    color.chars().next().unwrap()
-}
-
-pub type Value = u32;
-// list of values, assumed to be small to large
-pub const VALUES : [Value; 5] = [1, 2, 3, 4, 5];
-pub const FINAL_VALUE : Value = 5;
-
-pub fn get_count_for_value(value: &Value) -> u32 {
-    match *value {
-        1         => 3,
-        2 | 3 | 4 => 2,
-        5         => 1,
-        _ => { panic!(format!("Unexpected value: {}", value)); }
-    }
-}
+use cards::*;
 
 pub type Player = u32;
 
-#[derive(Debug,Clone,PartialEq,Eq,Hash)]
-pub struct Card {
-    pub color: Color,
-    pub value: Value,
-}
-impl Card {
-    fn new(color: Color, value: Value) -> Card {
-        Card { color: color, value: value }
-    }
-}
-impl fmt::Display for Card {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}{}", display_color(self.color), self.value)
-    }
-}
-
-pub type Cards = Vec<Card>;
-pub type CardsInfo = Vec<CardInfo>;
-
-#[derive(Debug,Clone)]
-pub struct Firework {
-    pub color: Color,
-    pub top: Value,
-}
-impl Firework {
-    fn new(color: Color) -> Firework {
-        Firework {
-            color: color,
-            top: 0,
-        }
-    }
-
-    fn desired_value(&self) -> Option<Value> {
-        if self.complete() { None } else { Some(self.top + 1) }
-    }
-
-    fn score(&self) -> Score {
-        self.top
-    }
-
-    fn complete(&self) -> bool {
-        self.top == FINAL_VALUE
-    }
-
-    fn place(&mut self, card: &Card) {
-        assert!(
-            card.color == self.color,
-            "Attempted to place card on firework of wrong color!"
-        );
-        assert!(
-            Some(card.value) == self.desired_value(),
-            "Attempted to place card of wrong value on firework!"
-        );
-        self.top = card.value;
-    }
-}
-impl fmt::Display for Firework {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.complete() {
-            write!(f, "{} firework complete!", self.color)
-        } else {
-            write!(f, "{} firework at {}", self.color, self.top)
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct Discard {
-    pub cards: Cards,
-    counts: HashMap<Color, HashMap<Value, u32>>,
-}
-impl Discard {
-    fn new() -> Discard {
-        let mut counts = HashMap::new();
-        for color in COLORS.iter() {
-            let mut color_count = HashMap::new();
-            for value in VALUES.iter() {
-                color_count.insert(*value, 0);
-            }
-            counts.insert(*color, color_count);
-        }
-        Discard {
-            cards: Cards::new(),
-            counts: counts,
-        }
-    }
-
-    fn get_count(&self, card: &Card) -> u32 {
-        let color_count = self.counts.get(card.color).unwrap();
-        color_count.get(&card.value).unwrap().clone()
-    }
-
-    fn has_all(&self, card: &Card) -> bool {
-        self.remaining(card) == 0
-    }
-
-    fn remaining(&self, card: &Card) -> u32 {
-        let count = self.get_count(&card);
-        get_count_for_value(&card.value) - count
-    }
-
-    fn place(&mut self, card: Card) {
-        let count = self.get_count(&card);
-        let ref mut color_count = self.counts.get_mut(card.color).unwrap();
-        color_count.insert(card.value, count + 1);
-        self.cards.push(card);
-    }
-}
-impl fmt::Display for Discard {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // try!(f.write_str(&format!(
-        //     "{}", self.cards,
-        // )));
-        for color in COLORS.iter() {
-            try!(f.write_str(&format!(
-                "{}: ", display_color(color),
-            )));
-            for value in VALUES.iter() {
-                let count = self.get_count(&Card::new(color, *value));
-                let total = get_count_for_value(value);
-                try!(f.write_str(&format!(
-                    "{}/{} {}s", count, total, value
-                )));
-                if *value != FINAL_VALUE {
-                    try!(f.write_str(", "));
-                }
-            }
-            try!(f.write_str("\n"));
-        }
-        Ok(())
-    }
-}
 
 #[derive(Debug,Clone)]
 pub enum Hinted {
@@ -225,7 +70,7 @@ pub struct PlayerState {
     // the player's actual hand
     pub hand: Cards,
     // represents what is common knowledge about the player's hand
-    pub info: CardsInfo,
+    pub info: Vec<SimpleCardInfo>,
 }
 impl fmt::Display for PlayerState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -233,7 +78,7 @@ impl fmt::Display for PlayerState {
 
         let mut i = 0;
         for card in &self.hand {
-            let info : &CardInfo = &self.info[i];
+            let info : &SimpleCardInfo = &self.info[i];
             try!(f.write_str(&format!("{} =? {: <15} ", card, info)));
             i += 1;
         }
@@ -243,7 +88,7 @@ impl fmt::Display for PlayerState {
 impl PlayerState {
     pub fn new(hand: Cards) -> PlayerState {
         let infos = (0..hand.len()).map(|_| {
-            CardInfo::new()
+            SimpleCardInfo::new()
         }).collect::<Vec<_>>();
         PlayerState {
             hand: hand,
@@ -251,7 +96,7 @@ impl PlayerState {
         }
     }
 
-    pub fn take(&mut self, index: usize) -> (Card, CardInfo) {
+    pub fn take(&mut self, index: usize) -> (Card, SimpleCardInfo) {
         let card = self.hand.remove(index);
         let info = self.info.remove(index);
         (card, info)
@@ -259,7 +104,7 @@ impl PlayerState {
 
     pub fn place(&mut self, card: Card) {
         self.hand.push(card);
-        self.info.push(CardInfo::new());
+        self.info.push(SimpleCardInfo::new());
     }
 
     pub fn reveal(&mut self, hinted: &Hinted) -> Vec<usize> {
@@ -269,7 +114,7 @@ impl PlayerState {
                 let mut i = 0;
                 for card in &self.hand {
                     let matches = card.color == *color;
-                    self.info[i].color_info.mark(color, matches);
+                    self.info[i].mark_color(color, matches);
                     if matches { indices.push(i); }
                     i += 1;
                 }
@@ -278,7 +123,7 @@ impl PlayerState {
                 let mut i = 0;
                 for card in &self.hand {
                     let matches = card.value == *value;
-                    self.info[i].value_info.mark(value, matches);
+                    self.info[i].mark_value(value, matches);
                     if matches { indices.push(i); }
                     i += 1;
                 }
@@ -368,7 +213,7 @@ impl BoardState {
         }
     }
 
-    fn get_firework(&self, color: &Color) -> &Firework {
+    pub fn get_firework(&self, color: &Color) -> &Firework {
         self.fireworks.get(color).unwrap()
     }
 
@@ -523,7 +368,7 @@ pub struct GameStateView<'a> {
     // the player whose view it is
     pub player: Player,
     // what is known about their own hand (and thus common knowledge)
-    pub info: &'a CardsInfo,
+    pub info: &'a Vec<SimpleCardInfo>,
     // the cards of the other players, as well as the information they have
     pub other_player_states: HashMap<Player, &'a PlayerState>,
     // board state
@@ -724,3 +569,51 @@ impl GameState {
         turn
     }
 }
+
+#[derive(Debug,Clone)]
+pub struct Firework {
+    pub color: Color,
+    pub top: Value,
+}
+impl Firework {
+    pub fn new(color: Color) -> Firework {
+        Firework {
+            color: color,
+            top: 0,
+        }
+    }
+
+    fn desired_value(&self) -> Option<Value> {
+        if self.complete() { None } else { Some(self.top + 1) }
+    }
+
+    fn score(&self) -> Score {
+        self.top
+    }
+
+    fn complete(&self) -> bool {
+        self.top == FINAL_VALUE
+    }
+
+    fn place(&mut self, card: &Card) {
+        assert!(
+            card.color == self.color,
+            "Attempted to place card on firework of wrong color!"
+        );
+        assert!(
+            Some(card.value) == self.desired_value(),
+            "Attempted to place card of wrong value on firework!"
+        );
+        self.top = card.value;
+    }
+}
+impl fmt::Display for Firework {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.complete() {
+            write!(f, "{} firework complete!", self.color)
+        } else {
+            write!(f, "{} firework at {}", self.color, self.top)
+        }
+    }
+}
+

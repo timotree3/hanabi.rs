@@ -4,13 +4,14 @@ extern crate log;
 extern crate rand;
 extern crate crossbeam;
 
+mod cards;
+mod info;
 mod game;
 mod simulator;
 mod strategies {
     pub mod examples;
     pub mod cheating;
 }
-mod info;
 
 use getopts::Options;
 use std::str::FromStr;

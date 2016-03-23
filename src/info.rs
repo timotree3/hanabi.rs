@@ -5,6 +5,7 @@ use std::hash::Hash;
 
 use cards::*;
 
+// trait representing information about a card
 pub trait CardInfo {
     // get all a-priori possibilities
     fn get_all_possibilities(&self) -> Vec<Card> {
@@ -16,8 +17,37 @@ pub trait CardInfo {
         }
         v
     }
+    // whether the card is possible
+    fn is_possible(&self, card: &Card) -> bool;
+
+    // TODO: have a borrow_possibilities to allow for more efficiency?
+
     // mark all current possibilities for the card
-    fn get_possibilities(&self) -> Vec<Card>;
+    fn get_possibilities(&self) -> Vec<Card> {
+        let mut v = Vec::new();
+        for &color in COLORS.iter() {
+            for &value in VALUES.iter() {
+                let card = Card::new(color, value);
+                if self.is_possible(&card) {
+                    v.push(card);
+                }
+            }
+        }
+        v
+    }
+    // get probability weight for the card
+    #[allow(unused_variables)]
+    fn get_weight(&self, card: &Card) -> u32 {
+        1
+    }
+    fn get_weighted_possibilities(&self) -> Vec<(Card, u32)> {
+        let mut v = Vec::new();
+        for card in self.get_possibilities() {
+            let weight = self.get_weight(&card);
+            v.push((card, weight));
+        }
+        v
+    }
 
     // mark a whole color as false
     fn mark_color_false(&mut self, color: &Color);
@@ -64,47 +94,34 @@ pub trait Info<T> where T: Hash + Eq + Clone {
 
     // get map from values to whether it's possible
     // true means maybe, false means no
-    fn get_possibility_map(&self) -> &HashMap<T, bool>;
-    fn get_mut_possibility_map(&mut self) -> &mut HashMap<T, bool>;
+    fn get_possibility_set(&self) -> &HashSet<T>;
+    fn get_mut_possibility_set(&mut self) -> &mut HashSet<T>;
 
     // get what is now possible
     fn get_possibilities(&self) -> Vec<T> {
-        let mut v = Vec::new();
-        let map = self.get_possibility_map();
-        for (value, is_possible) in map {
-            if *is_possible {
-                v.push(value.clone());
-            }
-        }
-        v
+        self.get_possibility_set().iter().map(|t| t.clone()).collect::<Vec<T>>()
     }
 
     fn is_possible(&self, value: &T) -> bool {
-        // self.get_possibility_map().contains_key(value)
-        *self.get_possibility_map().get(value).unwrap()
+        self.get_possibility_set().contains(value)
     }
 
-    fn initialize() -> HashMap<T, bool> {
-        let mut possible_map : HashMap<T, bool> = HashMap::new();
+    fn initialize() -> HashSet<T> {
+        let mut possible_map : HashSet<T> = HashSet::new();
         for value in Self::get_all_possibilities().iter() {
-            possible_map.insert(value.clone(), true);
+            possible_map.insert(value.clone());
         }
         possible_map
     }
 
     fn mark_true(&mut self, value: &T) {
-        // mark everything else as definitively impossible
-        for (other_value, possible) in self.get_mut_possibility_map().iter_mut() {
-            if other_value != value {
-                *possible = false;
-            } else {
-                assert_eq!(*possible, true);
-            }
-        }
+        let possible = self.get_mut_possibility_set();
+        possible.clear();
+        possible.insert(value.clone());
     }
 
     fn mark_false(&mut self, value: &T) {
-        self.get_mut_possibility_map().insert(value.clone(), false);
+        self.get_mut_possibility_set().remove(value);
     }
 
     fn mark(&mut self, value: &T, info: bool) {
@@ -117,25 +134,25 @@ pub trait Info<T> where T: Hash + Eq + Clone {
 }
 
 #[derive(Debug)]
-pub struct ColorInfo(HashMap<Color, bool>);
+pub struct ColorInfo(HashSet<Color>);
 impl ColorInfo {
     pub fn new() -> ColorInfo { ColorInfo(ColorInfo::initialize()) }
 }
 impl Info<Color> for ColorInfo {
     fn get_all_possibilities() -> Vec<Color> { COLORS.to_vec() }
-    fn get_possibility_map(&self) -> &HashMap<Color, bool> { &self.0 }
-    fn get_mut_possibility_map(&mut self) -> &mut HashMap<Color, bool> { &mut self.0 }
+    fn get_possibility_set(&self) -> &HashSet<Color> { &self.0 }
+    fn get_mut_possibility_set(&mut self) -> &mut HashSet<Color> { &mut self.0 }
 }
 
 #[derive(Debug)]
-pub struct ValueInfo(HashMap<Value, bool>);
+pub struct ValueInfo(HashSet<Value>);
 impl ValueInfo {
     pub fn new() -> ValueInfo { ValueInfo(ValueInfo::initialize()) }
 }
 impl Info<Value> for ValueInfo {
     fn get_all_possibilities() -> Vec<Value> { VALUES.to_vec() }
-    fn get_possibility_map(&self) -> &HashMap<Value, bool> { &self.0 }
-    fn get_mut_possibility_map(&mut self) -> &mut HashMap<Value, bool> { &mut self.0 }
+    fn get_possibility_set(&self) -> &HashSet<Value> { &self.0 }
+    fn get_mut_possibility_set(&mut self) -> &mut HashSet<Value> { &mut self.0 }
 }
 
 // represents information only of the form:
@@ -162,6 +179,11 @@ impl CardInfo for SimpleCardInfo {
             }
         }
         v
+    }
+    fn is_possible(&self, card: &Card) -> bool {
+        self.color_info.is_possible(&card.color) &&
+        self.value_info.is_possible(&card.value)
+
     }
     fn mark_color_false(&mut self, color: &Color) {
         self.color_info.mark_false(color);
@@ -193,16 +215,20 @@ impl fmt::Display for SimpleCardInfo {
 
 // Can represent information of the form:
 // this card is/isn't possible
+// also, maintains weights for the cards
 #[derive(Clone)]
-struct CardPossibilityTable {
-    possible: HashSet<Card>,
+pub struct CardPossibilityTable {
+    possible: HashMap<Card, u32>,
 }
 impl CardPossibilityTable {
     pub fn new() -> CardPossibilityTable {
-        let mut possible = HashSet::new();
+        let mut possible = HashMap::new();
         for &color in COLORS.iter() {
             for &value in VALUES.iter() {
-                possible.insert(Card::new(color, value));
+                possible.insert(
+                    Card::new(color, value),
+                    get_count_for_value(&value)
+                );
             }
         }
         CardPossibilityTable {
@@ -216,8 +242,11 @@ impl CardPossibilityTable {
     }
 }
 impl CardInfo for CardPossibilityTable {
+    fn is_possible(&self, card: &Card) -> bool {
+        self.possible.contains_key(card)
+    }
     fn get_possibilities(&self) -> Vec<Card> {
-        let mut cards = self.possible.iter().map(|card| {card.clone() }).collect::<Vec<_>>();
+        let mut cards = self.possible.keys().map(|card| {card.clone() }).collect::<Vec<_>>();
         cards.sort();
         cards
     }
@@ -231,6 +260,9 @@ impl CardInfo for CardPossibilityTable {
         for &color in COLORS.iter() {
             self.mark_false(&Card::new(color, value.clone()));
         }
+    }
+    fn get_weight(&self, card: &Card) -> u32 {
+        *self.possible.get(card).unwrap_or(&0)
     }
 }
 impl fmt::Display for CardPossibilityTable {

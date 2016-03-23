@@ -4,7 +4,6 @@ use std::collections::{HashMap, HashSet};
 
 use simulator::*;
 use game::*;
-use cards::*;
 
 // strategy that explicitly cheats by using Rc/RefCell
 // serves as a reference point for other strategies

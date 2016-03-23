@@ -131,3 +131,51 @@ impl fmt::Display for Discard {
     }
 }
 
+pub type Score = u32;
+
+#[derive(Debug,Clone)]
+pub struct Firework {
+    pub color: Color,
+    pub top: Value,
+}
+impl Firework {
+    pub fn new(color: Color) -> Firework {
+        Firework {
+            color: color,
+            top: 0,
+        }
+    }
+
+    pub fn desired_value(&self) -> Option<Value> {
+        if self.complete() { None } else { Some(self.top + 1) }
+    }
+
+    pub fn score(&self) -> Score {
+        self.top
+    }
+
+    pub fn complete(&self) -> bool {
+        self.top == FINAL_VALUE
+    }
+
+    pub fn place(&mut self, card: &Card) {
+        assert!(
+            card.color == self.color,
+            "Attempted to place card on firework of wrong color!"
+        );
+        assert!(
+            Some(card.value) == self.desired_value(),
+            "Attempted to place card of wrong value on firework!"
+        );
+        self.top = card.value;
+    }
+}
+impl fmt::Display for Firework {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.complete() {
+            write!(f, "{} firework complete!", self.color)
+        } else {
+            write!(f, "{} firework at {}", self.color, self.top)
+        }
+    }
+}

@@ -2,11 +2,10 @@ use rand::{self, Rng, SeedableRng};
 use std::collections::HashMap;
 use std::fmt;
 
-use info::*;
-use cards::*;
+pub use info::*;
+pub use cards::*;
 
 pub type Player = u32;
-
 
 #[derive(Debug,Clone)]
 pub enum Hinted {
@@ -292,6 +291,35 @@ impl BoardState {
         }
     }
 
+    fn probability_of_predicate<T>(
+        &self,
+        card_info: &T,
+        predicate: &Fn(&Self, &Card) -> bool
+    ) -> f32 where T: CardInfo {
+        let mut total_weight = 0;
+        let mut playable_weight = 0;
+        for card in card_info.get_possibilities() {
+            let weight = card_info.get_weight(&card);
+            if predicate(&self, &card) {
+                playable_weight += weight;
+            }
+            total_weight += weight;
+        }
+        (playable_weight as f32) / (total_weight as f32)
+    }
+
+    pub fn probability_is_playable<T>(&self, card_info: &T) -> f32 where T: CardInfo {
+        self.probability_of_predicate(card_info, &Self::is_playable)
+    }
+
+    pub fn probability_is_dead<T>(&self, card_info: &T) -> f32 where T: CardInfo {
+        self.probability_of_predicate(card_info, &Self::is_dead)
+    }
+
+    pub fn probability_is_dispensable<T>(&self, card_info: &T) -> f32 where T: CardInfo {
+        self.probability_of_predicate(card_info, &Self::is_dispensable)
+    }
+
     pub fn get_players(&self) -> Vec<Player> {
         (0..self.num_players).collect::<Vec<_>>()
     }
@@ -421,8 +449,6 @@ impl fmt::Display for GameState {
         Ok(())
     }
 }
-
-pub type Score = u32;
 
 impl GameState {
     pub fn new(opts: &GameOptions, seed: u32) -> GameState {
@@ -569,51 +595,3 @@ impl GameState {
         turn
     }
 }
-
-#[derive(Debug,Clone)]
-pub struct Firework {
-    pub color: Color,
-    pub top: Value,
-}
-impl Firework {
-    pub fn new(color: Color) -> Firework {
-        Firework {
-            color: color,
-            top: 0,
-        }
-    }
-
-    fn desired_value(&self) -> Option<Value> {
-        if self.complete() { None } else { Some(self.top + 1) }
-    }
-
-    fn score(&self) -> Score {
-        self.top
-    }
-
-    fn complete(&self) -> bool {
-        self.top == FINAL_VALUE
-    }
-
-    fn place(&mut self, card: &Card) {
-        assert!(
-            card.color == self.color,
-            "Attempted to place card on firework of wrong color!"
-        );
-        assert!(
-            Some(card.value) == self.desired_value(),
-            "Attempted to place card of wrong value on firework!"
-        );
-        self.top = card.value;
-    }
-}
-impl fmt::Display for Firework {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.complete() {
-            write!(f, "{} firework complete!", self.color)
-        } else {
-            write!(f, "{} firework at {}", self.color, self.top)
-        }
-    }
-}
-

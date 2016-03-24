@@ -1,6 +1,8 @@
 use rand::{self, Rng, SeedableRng};
 use std::collections::HashMap;
 use std::fmt;
+use std::iter;
+use std::slice::IterMut;
 
 pub use info::*;
 pub use cards::*;
@@ -38,7 +40,7 @@ pub enum TurnChoice {
 // represents what happened in a turn
 #[derive(Debug,Clone)]
 pub enum TurnResult {
-    Hint(Vec<usize>), // indices revealed
+    Hint(Vec<bool>),  // vector of whether each was in the hint
     Discard(Card),    // card discarded
     Play(Card, bool), // card played, whether it succeeded
 }
@@ -106,30 +108,29 @@ impl PlayerState {
         self.info.push(SimpleCardInfo::new());
     }
 
-    pub fn reveal(&mut self, hinted: &Hinted) -> Vec<usize> {
-        let mut indices = Vec::new();
+    fn hand_info_iter_mut<'a>(&'a mut self) ->
+        iter::Zip<IterMut<'a, Card>, IterMut<'a, SimpleCardInfo>>
+    {
+        self.hand.iter_mut().zip(self.info.iter_mut())
+    }
+
+    pub fn reveal(&mut self, hinted: &Hinted) -> Vec<bool> {
         match hinted {
             &Hinted::Color(ref color) => {
-                let mut i = 0;
-                for card in &self.hand {
+                self.hand_info_iter_mut().map(|(card, info)| {
                     let matches = card.color == *color;
-                    self.info[i].mark_color(color, matches);
-                    if matches { indices.push(i); }
-                    i += 1;
-                }
+                    info.mark_color(color, matches);
+                    matches
+                }).collect::<Vec<_>>()
             }
             &Hinted::Value(ref value) => {
-                let mut i = 0;
-                for card in &self.hand {
+                self.hand_info_iter_mut().map(|(card, info)| {
                     let matches = card.value == *value;
-                    self.info[i].mark_value(value, matches);
-                    if matches { indices.push(i); }
-                    i += 1;
-                }
+                    info.mark_value(value, matches);
+                    matches
+                }).collect::<Vec<_>>()
             }
-
         }
-        indices
     }
 }
 
@@ -529,11 +530,11 @@ impl GameState {
                             format!("Player {} gave a hint to himself", hint.player));
 
                     let ref mut state = self.player_states.get_mut(&hint.player).unwrap();
-                    let indices = state.reveal(&hint.hinted);
-                    if (!self.board.allow_empty_hints) && (indices.len() == 0) {
+                    let results = state.reveal(&hint.hinted);
+                    if (!self.board.allow_empty_hints) && (results.iter().all(|matched| !matched)) {
                         panic!("Tried hinting an empty hint");
                     }
-                    TurnResult::Hint(indices)
+                    TurnResult::Hint(results)
                 }
                 TurnChoice::Discard(index) => {
                     let card = self.take_from_hand(index);

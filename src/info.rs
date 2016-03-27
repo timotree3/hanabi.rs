@@ -2,6 +2,7 @@ use std::cmp::Eq;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::hash::Hash;
+use std::convert::From;
 
 use cards::*;
 
@@ -20,8 +21,6 @@ pub trait CardInfo {
     // whether the card is possible
     fn is_possible(&self, card: &Card) -> bool;
 
-    // TODO: have a borrow_possibilities to allow for more efficiency?
-
     // mark all current possibilities for the card
     fn get_possibilities(&self) -> Vec<Card> {
         let mut v = Vec::new();
@@ -37,16 +36,35 @@ pub trait CardInfo {
     }
     // get probability weight for the card
     #[allow(unused_variables)]
-    fn get_weight(&self, card: &Card) -> u32 {
-        1
+    fn get_weight(&self, card: &Card) -> f32 {
+        1 as f32
     }
-    fn get_weighted_possibilities(&self) -> Vec<(Card, u32)> {
+    fn get_weighted_possibilities(&self) -> Vec<(Card, f32)> {
         let mut v = Vec::new();
         for card in self.get_possibilities() {
             let weight = self.get_weight(&card);
             v.push((card, weight));
         }
         v
+    }
+    fn weighted_score<T>(&self, score_fn: &Fn(&Card) -> T) -> f32
+        where f32: From<T>
+    {
+        let mut total_score = 0.;
+        let mut total_weight = 0.;
+        for card in self.get_possibilities() {
+            let weight = self.get_weight(&card);
+            let score = f32::from(score_fn(&card));
+            total_weight += weight;
+            total_score += weight * score;
+        }
+        total_score / total_weight
+    }
+    fn probability_of_predicate(&self, predicate: &Fn(&Card) -> bool) -> f32 {
+        let f = |card: &Card| {
+            if predicate(card) { 1.0 } else { 0.0 }
+        };
+        self.weighted_score(&f)
     }
 
     // mark a whole color as false
@@ -215,30 +233,52 @@ impl fmt::Display for SimpleCardInfo {
 
 // Can represent information of the form:
 // this card is/isn't possible
-// also, maintains weights for the cards
+// also, maintains integer weights for the cards
 #[derive(Clone)]
 pub struct CardPossibilityTable {
     possible: HashMap<Card, u32>,
 }
 impl CardPossibilityTable {
     pub fn new() -> CardPossibilityTable {
+        Self::from(&CardCounts::new())
+    }
+
+    // mark a possible card as false
+    pub fn mark_false(&mut self, card: &Card) {
+        self.possible.remove(card);
+    }
+
+    // a bit more efficient
+    pub fn borrow_possibilities<'a>(&'a self) -> Vec<&'a Card> {
+        self.possible.keys().collect::<Vec<_>>()
+    }
+
+    pub fn decrement_weight_if_possible(&mut self, card: &Card) {
+        if self.is_possible(card) {
+            self.decrement_weight(card);
+        }
+    }
+
+    pub fn decrement_weight(&mut self, card: &Card) {
+        let weight =
+            self.possible.get_mut(card)
+                .expect(&format!("Decrementing weight for impossible card: {}", card));
+        *weight -= 1;
+    }
+}
+impl <'a> From<&'a CardCounts> for CardPossibilityTable {
+    fn from(counts: &'a CardCounts) -> CardPossibilityTable {
         let mut possible = HashMap::new();
         for &color in COLORS.iter() {
             for &value in VALUES.iter() {
-                possible.insert(
-                    Card::new(color, value),
-                    get_count_for_value(&value)
-                );
+                let card = Card::new(color, value);
+                let count = counts.remaining(&card);
+                possible.insert(card, count);
             }
         }
         CardPossibilityTable {
             possible: possible,
         }
-    }
-
-    // mark a possible card as false
-    fn mark_false(&mut self, card: &Card) {
-        self.possible.remove(card);
     }
 }
 impl CardInfo for CardPossibilityTable {
@@ -261,14 +301,14 @@ impl CardInfo for CardPossibilityTable {
             self.mark_false(&Card::new(color, value.clone()));
         }
     }
-    fn get_weight(&self, card: &Card) -> u32 {
-        *self.possible.get(card).unwrap_or(&0)
+    fn get_weight(&self, card: &Card) -> f32 {
+        *self.possible.get(card).unwrap_or(&0) as f32
     }
 }
 impl fmt::Display for CardPossibilityTable {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for card in self.get_possibilities() {
-            try!(f.write_str(&format!("{}, ", card)));
+        for (card, weight) in &self.possible {
+            try!(f.write_str(&format!("{} {}, ", weight, card)));
         }
         Ok(())
     }

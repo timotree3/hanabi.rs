@@ -33,8 +33,8 @@ pub struct Hint {
 #[derive(Debug,Clone)]
 pub enum TurnChoice {
     Hint(Hint),
-    Discard(usize),
-    Play(usize),
+    Discard(usize), // index of card to discard
+    Play(usize),    // index of card to play
 }
 
 // represents what happened in a turn
@@ -292,33 +292,19 @@ impl BoardState {
         }
     }
 
-    fn probability_of_predicate<T>(
-        &self,
-        card_info: &T,
-        predicate: &Fn(&Self, &Card) -> bool
-    ) -> f32 where T: CardInfo {
-        let mut total_weight = 0;
-        let mut playable_weight = 0;
-        for card in card_info.get_possibilities() {
-            let weight = card_info.get_weight(&card);
-            if predicate(&self, &card) {
-                playable_weight += weight;
-            }
-            total_weight += weight;
-        }
-        (playable_weight as f32) / (total_weight as f32)
-    }
-
     pub fn probability_is_playable<T>(&self, card_info: &T) -> f32 where T: CardInfo {
-        self.probability_of_predicate(card_info, &Self::is_playable)
+        let f = |card: &Card| { self.is_playable(card) };
+        card_info.probability_of_predicate(&f)
     }
 
     pub fn probability_is_dead<T>(&self, card_info: &T) -> f32 where T: CardInfo {
-        self.probability_of_predicate(card_info, &Self::is_dead)
+        let f = |card: &Card| { self.is_dead(card) };
+        card_info.probability_of_predicate(&f)
     }
 
     pub fn probability_is_dispensable<T>(&self, card_info: &T) -> f32 where T: CardInfo {
-        self.probability_of_predicate(card_info, &Self::is_dispensable)
+        let f = |card: &Card| { self.is_dispensable(card) };
+        card_info.probability_of_predicate(&f)
     }
 
     pub fn get_players(&self) -> Vec<Player> {

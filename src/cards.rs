@@ -65,7 +65,7 @@ impl CardCounts {
         get_count_for_value(&card.value) - count
     }
 
-    pub fn add(&mut self, card: &Card) {
+    pub fn increment(&mut self, card: &Card) {
         let count = self.counts.get_mut(card).unwrap();
         *count += 1;
     }
@@ -118,7 +118,7 @@ impl Discard {
     }
 
     pub fn place(&mut self, card: Card) {
-        self.counts.add(&card);
+        self.counts.increment(&card);
         self.cards.push(card);
     }
 }

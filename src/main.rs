@@ -11,6 +11,7 @@ mod simulator;
 mod strategies {
     pub mod examples;
     pub mod cheating;
+    pub mod information;
 }
 
 use getopts::Options;
@@ -126,6 +127,10 @@ fn main() {
         },
         "cheat" => {
             Box::new(strategies::cheating::CheatingStrategyConfig::new())
+                as Box<simulator::GameStrategyConfig + Sync>
+        },
+        "info" => {
+            Box::new(strategies::information::InformationStrategyConfig::new())
                 as Box<simulator::GameStrategyConfig + Sync>
         },
         _ => {

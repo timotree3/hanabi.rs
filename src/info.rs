@@ -280,6 +280,10 @@ impl CardPossibilityTable {
             None
         }
     }
+
+    pub fn is_determined(&self) -> bool {
+        self.get_possibilities().len() == 1
+    }
 }
 impl <'a> From<&'a CardCounts> for CardPossibilityTable {
     fn from(counts: &'a CardCounts) -> CardPossibilityTable {

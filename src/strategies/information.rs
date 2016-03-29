@@ -47,11 +47,14 @@ impl ModulusInformation {
     pub fn emit(&mut self, modulus: u32) -> Self {
         assert!(self.modulus >= modulus);
         assert!(self.modulus % modulus == 0);
+        let original_modulus = self.modulus;
+        let original_value = self.value;
         self.modulus = self.modulus / modulus;
         let value = self.value / self.modulus;
-        assert!((self.value - value) % modulus == 0);
-        self.value = (self.value - value) / modulus;
-
+        self.value = self.value - value * self.modulus;
+        trace!("orig value {}, orig modulus {}, self.value {}, self.modulus {}, value {}, modulus {}",
+               original_value, original_modulus, self.value, self.modulus, value, modulus);
+        assert!(original_value == value * self.modulus + self.value);
         Self::new(modulus, value)
     }
 
@@ -129,32 +132,83 @@ impl Question for IsPlayable {
         }
     }
 }
-// struct IsDead {
-//     index: usize,
-// }
-// impl Question for IsDead {
-//     fn info_amount(&self) -> u32 { 2 }
-//     fn answer(&self, hand: &Cards, view: &Box<GameView>) -> u32 {
-//         let ref card = hand[self.index];
-//         if view.get_board().is_dead(card) { 1 } else { 0 }
-//     }
-//     fn acknowledge_answer(
-//         &self,
-//         answer: u32,
-//         hand_info: &mut Vec<CardPossibilityTable>,
-//         view: &Box<GameView>,
-//     ) {
-//         let ref mut card_table = hand_info[self.index];
-//         let possible = card_table.get_possibilities();
-//         for card in &possible {
-//             if view.get_board().is_dead(card) {
-//                 if answer == 0 { card_table.mark_false(card); }
-//             } else {
-//                 if answer == 1 { card_table.mark_false(card); }
-//             }
-//         }
-//     }
-// }
+
+struct IsDead {
+    index: usize,
+}
+impl Question for IsDead {
+    fn info_amount(&self) -> u32 { 2 }
+    fn answer(&self, hand: &Cards, view: Box<&GameView>) -> u32 {
+        let ref card = hand[self.index];
+        if view.get_board().is_dead(card) { 1 } else { 0 }
+    }
+    fn acknowledge_answer(
+        &self,
+        answer: u32,
+        hand_info: &mut Vec<CardPossibilityTable>,
+        view: Box<&GameView>,
+    ) {
+        let ref mut card_table = hand_info[self.index];
+        let possible = card_table.get_possibilities();
+        for card in &possible {
+            if view.get_board().is_dead(card) {
+                if answer == 0 { card_table.mark_false(card); }
+            } else {
+                if answer == 1 { card_table.mark_false(card); }
+            }
+        }
+    }
+}
+
+struct CardPossibilityPartition {
+    index: usize,
+    n_partitions: u32,
+    partition: HashMap<Card, u32>,
+}
+impl CardPossibilityPartition {
+    fn new<T>(
+        index: usize, n_partitions: u32, card_table: &CardPossibilityTable, view: &T
+    ) -> CardPossibilityPartition where T: GameView {
+        let mut cur_block = 0;
+        let mut partition = HashMap::new();
+        for card in card_table.get_possibilities() {
+            let mut block = cur_block;
+            if view.get_board().is_dead(&card) {
+                block = n_partitions - 1;
+            } else {
+                cur_block = (cur_block + 1) % (n_partitions - 1);
+            }
+            partition.insert(card.clone(), block);
+        }
+
+        CardPossibilityPartition {
+            index: index,
+            n_partitions: n_partitions,
+            partition: partition,
+        }
+    }
+}
+impl Question for CardPossibilityPartition {
+    fn info_amount(&self) -> u32 { self.n_partitions }
+    fn answer(&self, hand: &Cards, _: Box<&GameView>) -> u32 {
+        let ref card = hand[self.index];
+        *self.partition.get(&card).unwrap()
+    }
+    fn acknowledge_answer(
+        &self,
+        answer: u32,
+        hand_info: &mut Vec<CardPossibilityTable>,
+        _: Box<&GameView>,
+    ) {
+        let ref mut card_table = hand_info[self.index];
+        let possible = card_table.get_possibilities();
+        for card in &possible {
+            if *self.partition.get(card).unwrap() != answer {
+                card_table.mark_false(card);
+            }
+        }
+    }
+}
 
 #[allow(dead_code)]
 pub struct InformationStrategyConfig;
@@ -214,23 +268,34 @@ impl InformationPlayerStrategy {
         let mut questions = Vec::new();
         let mut info_remaining = total_info;
 
-        while info_remaining > 1 {
-            let mut question = None;
-            for (i, card_table) in hand_info.iter().enumerate() {
-                let p = view.get_board().probability_is_playable(card_table);
-                if (p != 0.0) && (p != 1.0) {
-                    question = Some(Box::new(IsPlayable {index: i}) as Box<Question>);
-                    break;
+        fn add_question<T: 'static>(
+            questions: &mut Vec<Box<Question>>, info_remaining: &mut u32, question: T
+        ) -> bool where T: Question {
+            *info_remaining = *info_remaining / question.info_amount();
+            questions.push(Box::new(question) as Box<Question>);
+
+            // if there's no more info to give, return that we should stop
+            *info_remaining <= 1
+        }
+
+        for (i, card_table) in hand_info.iter().enumerate() {
+            let p = view.get_board().probability_is_playable(card_table);
+            if (p != 0.0) && (p != 1.0) {
+                if add_question(&mut questions, &mut info_remaining, IsPlayable {index: i}) {
+                    return questions;
                 }
             }
-            if let Some(q) = question {
-                info_remaining = info_remaining / q.info_amount();
-                questions.push(q);
-            } else {
-                break;
+        }
+        for (i, card_table) in hand_info.iter().enumerate() {
+            if !card_table.is_determined() {
+                let question = CardPossibilityPartition::new(i, info_remaining, card_table, view);
+                if add_question(&mut questions, &mut info_remaining, question) {
+                    return questions;
+                }
             }
         }
-        questions
+
+        return questions
     }
 
     fn answer_questions<T>(
@@ -588,6 +653,7 @@ impl PlayerStrategy for InformationPlayerStrategy {
         }).collect::<Vec<_>>();
 
         if playable_cards.len() > 0 {
+            // TODO: try playing things that have no chance of being dead
             // play the best playable card
             // the higher the play_score, the better to play
             let mut play_score = -1.0;

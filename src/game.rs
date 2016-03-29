@@ -66,7 +66,7 @@ pub struct GameOptions {
 }
 
 // The state of a given player:  all other players may see this
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub struct PlayerState {
     // the player's actual hand
     pub hand: Cards,
@@ -154,7 +154,7 @@ fn new_deck(seed: u32) -> Cards {
 
 // State of everything except the player's hands
 // Is all completely common knowledge
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub struct BoardState {
     deck: Cards,
     pub total_cards: u32,
@@ -377,9 +377,50 @@ impl fmt::Display for BoardState {
 }
 
 // complete game view of a given player
-// state will be borrowed GameState
+pub trait GameView {
+    fn me(&self) -> Player;
+    fn my_info(&self) -> &Vec<SimpleCardInfo>;
+    fn get_state(&self, player: &Player) -> &PlayerState;
+    fn get_board(&self) -> &BoardState;
+
+    fn get_hand(&self, player: &Player) -> &Cards {
+        assert!(self.me() != *player, "Cannot query about your own cards!");
+        &self.get_state(player).hand
+    }
+
+    fn hand_size(&self, player: &Player) -> usize {
+        if self.me() == *player {
+            self.my_info().len()
+        } else {
+            self.get_hand(player).len()
+        }
+    }
+
+    fn has_card(&self, player: &Player, card: &Card) -> bool {
+        for other_card in self.get_hand(player) {
+            if *card == *other_card {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn can_see(&self, card: &Card) -> bool {
+        for other_player in self.get_board().get_players() {
+            if self.me() == other_player {
+                continue
+            }
+            if self.has_card(&other_player, card) {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+// version of game view that is borrowed.  used in simulator for efficiency,
 #[derive(Debug)]
-pub struct GameStateView<'a> {
+pub struct BorrowedGameView<'a> {
     // the player whose view it is
     pub player: Player,
     // what is known about their own hand (and thus common knowledge)
@@ -389,29 +430,69 @@ pub struct GameStateView<'a> {
     // board state
     pub board: &'a BoardState,
 }
-impl <'a> GameStateView<'a> {
-    pub fn get_hand(&self, player: &Player) -> &Cards {
-        assert!(self.player != *player, "Cannot query about your own cards!");
-        &self.other_player_states.get(player).unwrap().hand
+impl <'a> GameView for BorrowedGameView<'a> {
+    fn me(&self) -> Player {
+        self.player
     }
-
-    pub fn has_card(&self, player: &Player, card: &Card) -> bool {
-        for other_card in self.get_hand(player) {
-            if *card == *other_card {
-                return true;
-            }
-        }
-        false
+    fn my_info(&self) -> &Vec<SimpleCardInfo> {
+        self.info
     }
-    pub fn can_see(&self, card: &Card) -> bool {
-        for other_player in self.other_player_states.keys() {
-            if self.has_card(other_player, card) {
-                return true;
-            }
-        }
-        false
+    fn get_state(&self, player: &Player) -> &PlayerState {
+        assert!(self.me() != *player, "Cannot query about your own state!");
+        self.other_player_states.get(player).unwrap()
+    }
+    fn get_board(&self) -> &BoardState {
+        self.board
     }
 }
+
+// version of game view, may be useful to strategies
+#[derive(Debug)]
+pub struct OwnedGameView {
+    // the player whose view it is
+    pub player: Player,
+    // what is known about their own hand (and thus common knowledge)
+    pub info: Vec<SimpleCardInfo>,
+    // the cards of the other players, as well as the information they have
+    pub other_player_states: HashMap<Player, PlayerState>,
+    // board state
+    pub board: BoardState,
+}
+impl OwnedGameView {
+    pub fn clone_from(borrowed_view: &BorrowedGameView) -> OwnedGameView {
+        let mut info : Vec<SimpleCardInfo> = Vec::new();
+        for card_info in borrowed_view.info.iter() {
+            info.push((*card_info).clone());
+        }
+        let mut other_player_states : HashMap<Player, PlayerState> = HashMap::new();
+        for (other_player, player_state) in &borrowed_view.other_player_states {
+            other_player_states.insert(*other_player, (*player_state).clone());
+        }
+
+        OwnedGameView {
+            player: borrowed_view.player.clone(),
+            info: info,
+            other_player_states: other_player_states,
+            board: (*borrowed_view.board).clone(),
+        }
+    }
+}
+impl GameView for OwnedGameView {
+    fn me(&self) -> Player {
+        self.player
+    }
+    fn my_info(&self) -> &Vec<SimpleCardInfo> {
+        &self.info
+    }
+    fn get_state(&self, player: &Player) -> &PlayerState {
+        assert!(self.me() != *player, "Cannot query about your own state!");
+        self.other_player_states.get(player).unwrap()
+    }
+    fn get_board(&self) -> &BoardState {
+        &self.board
+    }
+}
+
 
 // complete game state (known to nobody!)
 #[derive(Debug)]
@@ -471,14 +552,14 @@ impl GameState {
     }
 
     // get the game state view of a particular player
-    pub fn get_view(&self, player: Player) -> GameStateView {
+    pub fn get_view(&self, player: Player) -> BorrowedGameView {
         let mut other_player_states = HashMap::new();
         for (other_player, state) in &self.player_states {
             if player != *other_player {
                 other_player_states.insert(*other_player, state);
             }
         }
-        GameStateView {
+        BorrowedGameView {
             player: player,
             info: &self.player_states.get(&player).unwrap().info,
             other_player_states: other_player_states,

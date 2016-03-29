@@ -151,7 +151,7 @@ pub trait Info<T> where T: Hash + Eq + Clone {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub struct ColorInfo(HashSet<Color>);
 impl ColorInfo {
     pub fn new() -> ColorInfo { ColorInfo(ColorInfo::initialize()) }
@@ -162,7 +162,7 @@ impl Info<Color> for ColorInfo {
     fn get_mut_possibility_set(&mut self) -> &mut HashSet<Color> { &mut self.0 }
 }
 
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub struct ValueInfo(HashSet<Value>);
 impl ValueInfo {
     pub fn new() -> ValueInfo { ValueInfo(ValueInfo::initialize()) }
@@ -175,7 +175,7 @@ impl Info<Value> for ValueInfo {
 
 // represents information only of the form:
 // this color is/isn't possible, this value is/isn't possible
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub struct SimpleCardInfo {
     pub color_info: ColorInfo,
     pub value_info: ValueInfo,
@@ -260,10 +260,25 @@ impl CardPossibilityTable {
     }
 
     pub fn decrement_weight(&mut self, card: &Card) {
-        let weight =
-            self.possible.get_mut(card)
-                .expect(&format!("Decrementing weight for impossible card: {}", card));
-        *weight -= 1;
+        let remove = {
+            let weight =
+                self.possible.get_mut(card)
+                    .expect(&format!("Decrementing weight for impossible card: {}", card));
+            *weight -= 1;
+            *weight == 0
+        };
+        if remove {
+            self.possible.remove(card);
+        }
+    }
+
+    pub fn get_card(&self) -> Option<Card> {
+        let possibilities = self.get_possibilities();
+        if possibilities.len() == 1 {
+            Some(possibilities[0].clone())
+        } else {
+            None
+        }
     }
 }
 impl <'a> From<&'a CardCounts> for CardPossibilityTable {

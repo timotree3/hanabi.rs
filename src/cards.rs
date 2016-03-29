@@ -92,7 +92,7 @@ impl fmt::Display for CardCounts {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub struct Discard {
     pub cards: Cards,
     counts: CardCounts,

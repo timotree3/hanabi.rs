@@ -1,6 +1,6 @@
+use std::rc::Rc;
 use std::cell::{RefCell};
 use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
 
 use simulator::*;
 use game::*;
@@ -43,7 +43,7 @@ impl CheatingStrategy {
     }
 }
 impl GameStrategy for CheatingStrategy {
-    fn initialize(&self, player: Player, view: &GameStateView) -> Box<PlayerStrategy> {
+    fn initialize(&self, player: Player, view: &BorrowedGameView) -> Box<PlayerStrategy> {
         for (player, state) in &view.other_player_states {
             self.player_states_cheat.borrow_mut().insert(
                 *player, state.hand.clone()
@@ -62,7 +62,7 @@ pub struct CheatingPlayerStrategy {
 }
 impl CheatingPlayerStrategy {
     // last player might've drawn a new card, let him know!
-    fn inform_last_player_cards(&self, view: &GameStateView) {
+    fn inform_last_player_cards(&self, view: &BorrowedGameView) {
         let next = view.board.player_to_right(&self.me);
         self.player_states_cheat.borrow_mut().insert(
             next, view.other_player_states.get(&next).unwrap().hand.clone()
@@ -70,7 +70,7 @@ impl CheatingPlayerStrategy {
     }
 
     // give a throwaway hint - we only do this when we have nothing to do
-    fn throwaway_hint(&self, view: &GameStateView) -> TurnChoice {
+    fn throwaway_hint(&self, view: &BorrowedGameView) -> TurnChoice {
         let hint_player = view.board.player_to_left(&self.me);
         let hint_card = &view.get_hand(&hint_player).first().unwrap();
         TurnChoice::Hint(Hint {
@@ -80,7 +80,7 @@ impl CheatingPlayerStrategy {
     }
 
     // given a hand of cards, represents how badly it will need to play things
-    fn hand_play_value(&self, view: &GameStateView, hand: &Cards/*, all_viewable: HashMap<Color, <Value, u32>> */) -> u32 {
+    fn hand_play_value(&self, view: &BorrowedGameView, hand: &Cards/*, all_viewable: HashMap<Color, <Value, u32>> */) -> u32 {
         // dead = 0 points
         // indispensible = 5 + (5 - value) points
         // playable, not in another hand = 2 point
@@ -102,7 +102,7 @@ impl CheatingPlayerStrategy {
     }
 
     // how badly do we need to play a particular card
-    fn get_play_score(&self, view: &GameStateView, card: &Card) -> i32 {
+    fn get_play_score(&self, view: &BorrowedGameView, card: &Card) -> i32 {
         let states  = self.player_states_cheat.borrow();
         let my_hand = states.get(&self.me).unwrap();
 
@@ -124,7 +124,7 @@ impl CheatingPlayerStrategy {
         20 - (card.value as i32)
     }
 
-    fn find_useless_card(&self, view: &GameStateView, hand: &Cards) -> Option<usize> {
+    fn find_useless_card(&self, view: &BorrowedGameView, hand: &Cards) -> Option<usize> {
         let mut set: HashSet<Card> = HashSet::new();
 
         for (i, card) in hand.iter().enumerate() {
@@ -140,7 +140,7 @@ impl CheatingPlayerStrategy {
         return None
     }
 
-    fn someone_else_can_play(&self, view: &GameStateView) -> bool {
+    fn someone_else_can_play(&self, view: &BorrowedGameView) -> bool {
         for player in view.board.get_players() {
             if player != self.me {
                 for card in view.get_hand(&player) {
@@ -154,7 +154,7 @@ impl CheatingPlayerStrategy {
     }
 }
 impl PlayerStrategy for CheatingPlayerStrategy {
-    fn decide(&mut self, view: &GameStateView) -> TurnChoice {
+    fn decide(&mut self, view: &BorrowedGameView) -> TurnChoice {
         self.inform_last_player_cards(view);
 
         let states = self.player_states_cheat.borrow();
@@ -180,63 +180,64 @@ impl PlayerStrategy for CheatingPlayerStrategy {
             let index = my_cards.iter().position(|card| {
                 card == play_card.unwrap()
             }).unwrap();
-            TurnChoice::Play(index)
-        } else {
-            // discard threshold is how many cards we're willing to discard
-            // such that if we only played,
-            // we would not reach the final countdown round
-            // e.g. 50 total, 25 to play, 20 in hand
-            let discard_threshold =
-                view.board.total_cards
-                - (COLORS.len() * VALUES.len()) as u32
-                - (view.board.num_players * view.board.hand_size);
-            if view.board.discard_size() <= discard_threshold {
-                // if anything is totally useless, discard it
-                if let Some(i) = self.find_useless_card(view, my_cards) {
-                    return TurnChoice::Discard(i);
-                }
-            }
 
-            // hinting is better than discarding dead cards
-            // (probably because it stalls the deck-drawing).
-            if view.board.hints_remaining > 0 {
-                if self.someone_else_can_play(view) {
-                    return self.throwaway_hint(view);
-                }
-            }
+            return TurnChoice::Play(index)
+        }
 
+        // discard threshold is how many cards we're willing to discard
+        // such that if we only played,
+        // we would not reach the final countdown round
+        // e.g. 50 total, 25 to play, 20 in hand
+        let discard_threshold =
+            view.board.total_cards
+            - (COLORS.len() * VALUES.len()) as u32
+            - (view.board.num_players * view.board.hand_size);
+        if view.board.discard_size() <= discard_threshold {
             // if anything is totally useless, discard it
             if let Some(i) = self.find_useless_card(view, my_cards) {
                 return TurnChoice::Discard(i);
             }
+        }
 
-            // All cards are plausibly useful.
-            // Play the best discardable card, according to the ordering induced by comparing
-            //   (is in another hand, is dispensable, value)
-            // The higher, the better to discard
-            let mut discard_card = None;
-            let mut compval = (false, false, 0);
-            for card in my_cards {
-                let my_compval = (
-                    view.can_see(card),
-                    view.board.is_dispensable(card),
-                    card.value,
-                );
-                if my_compval > compval {
-                    discard_card = Some(card);
-                    compval = my_compval;
-                }
-            }
-            if let Some(card) = discard_card {
-                let index = my_cards.iter().position(|iter_card| {
-                    card == iter_card
-                }).unwrap();
-                TurnChoice::Discard(index)
-            } else {
-                panic!("This shouldn't happen!  No discardable card");
+        // hinting is better than discarding dead cards
+        // (probably because it stalls the deck-drawing).
+        if view.board.hints_remaining > 0 {
+            if self.someone_else_can_play(view) {
+                return self.throwaway_hint(view);
             }
         }
+
+        // if anything is totally useless, discard it
+        if let Some(i) = self.find_useless_card(view, my_cards) {
+            return TurnChoice::Discard(i);
+        }
+
+        // All cards are plausibly useful.
+        // Play the best discardable card, according to the ordering induced by comparing
+        //   (is in another hand, is dispensable, value)
+        // The higher, the better to discard
+        let mut discard_card = None;
+        let mut compval = (false, false, 0);
+        for card in my_cards {
+            let my_compval = (
+                view.can_see(card),
+                view.board.is_dispensable(card),
+                card.value,
+            );
+            if my_compval > compval {
+                discard_card = Some(card);
+                compval = my_compval;
+            }
+        }
+        if let Some(card) = discard_card {
+            let index = my_cards.iter().position(|iter_card| {
+                card == iter_card
+            }).unwrap();
+            TurnChoice::Discard(index)
+        } else {
+            panic!("This shouldn't happen!  No discardable card");
+        }
     }
-    fn update(&mut self, _: &Turn, _: &GameStateView) {
+    fn update(&mut self, _: &Turn, _: &BorrowedGameView) {
     }
 }

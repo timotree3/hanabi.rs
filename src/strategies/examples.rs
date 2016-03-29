@@ -24,7 +24,7 @@ pub struct RandomStrategy {
     play_probability: f64,
 }
 impl GameStrategy for RandomStrategy {
-    fn initialize(&self, player: Player, _: &GameStateView) -> Box<PlayerStrategy> {
+    fn initialize(&self, player: Player, _: &BorrowedGameView) -> Box<PlayerStrategy> {
         Box::new(RandomStrategyPlayer {
             hint_probability: self.hint_probability,
             play_probability: self.play_probability,
@@ -40,7 +40,7 @@ pub struct RandomStrategyPlayer {
 }
 
 impl PlayerStrategy for RandomStrategyPlayer {
-    fn decide(&mut self, view: &GameStateView) -> TurnChoice {
+    fn decide(&mut self, view: &BorrowedGameView) -> TurnChoice {
         let p = rand::random::<f64>();
         if p < self.hint_probability {
             if view.board.hints_remaining > 0 {
@@ -67,6 +67,6 @@ impl PlayerStrategy for RandomStrategyPlayer {
             TurnChoice::Discard(0)
         }
     }
-    fn update(&mut self, _: &Turn, _: &GameStateView) {
+    fn update(&mut self, _: &Turn, _: &BorrowedGameView) {
     }
 }

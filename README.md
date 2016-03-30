@@ -1,12 +1,21 @@
 # Simulations of Hanabi strategies
 
-Hanabi is an interesting cooperative game, with
-[simple rules](https://boardgamegeek.com/article/10670613#10670613).
+Hanabi is a cooperative card game of incomplete information.
+Despite relatively [simple rules](https://boardgamegeek.com/article/10670613#10670613),
+the space of Hanabi strategies is quite interesting.
 
-I plan on reimplementing strategies with ideas from [this paper](https://d0474d97-a-62cb3a1a-s-sites.googlegroups.com/site/rmgpgrwc/research-papers/Hanabi_final.pdf).
+This repository provides a framework for implementing Hanabi strategies.
+It also explores some implementations, based on ideas from
+[this paper](https://d0474d97-a-62cb3a1a-s-sites.googlegroups.com/site/rmgpgrwc/research-papers/Hanabi_final.pdf).
+
+In particular, it contains a variant of their "information strategy", with some improvements.
+This strategy achieves the best results I am aware of (see below), for n > 3.
+
+Please contact me if:
+- You know of other interesting/good strategy ideas!
+- Have questions about the framework
 
 Some similar projects I am aware of:
-
 - https://github.com/rjtobin/HanSim (written for the paper mentioned above)
 - https://github.com/Quuxplusone/Hanabi
 
@@ -39,8 +48,10 @@ For example,
 ## Results (sparsely updated)
 
 Currently, on seeds 0-9999, we have:
+(info strategy is only ran on 1000 seeds)
 
           |   2p    |   3p    |   4p    |   5p    |
 ----------|---------|---------|---------|---------|
 cheating  | 24.8600 | 24.9781 | 24.9715 | 24.9583 |
+info      | 14.676  | 22.19   | 24.516  | 24.68   |
 

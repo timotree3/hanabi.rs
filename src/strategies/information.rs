@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::cmp::Ordering;
 
 use simulator::*;
 use game::*;
@@ -17,9 +18,6 @@ use game::*;
 // 2. any hint not involving card i
 //
 // for 4 players, can give 6 distinct hints
-
-// TODO: currently, you need to be very careful due to
-// answers changing from the old view to the new view
 
 #[derive(Debug,Clone)]
 struct ModulusInformation {
@@ -220,9 +218,6 @@ impl InformationStrategyConfig {
 }
 impl GameStrategyConfig for InformationStrategyConfig {
     fn initialize(&self, opts: &GameOptions) -> Box<GameStrategy> {
-        if opts.num_players < 4 {
-            panic!("Information strategy doesn't work with less than 4 players");
-        }
         Box::new(InformationStrategy::new())
     }
 }
@@ -278,20 +273,43 @@ impl InformationPlayerStrategy {
             *info_remaining <= 1
         }
 
-        for (i, card_table) in hand_info.iter().enumerate() {
+        let mut augmented_hand_info = hand_info.iter().enumerate().map(|(i, card_table)| {
             let p = view.get_board().probability_is_playable(card_table);
+            (p, card_table, i)
+        }).collect::<Vec<_>>();
+
+        // sort by probability of play, then by index
+        augmented_hand_info.sort_by(|&(p1, card_table1, i1), &(p2, card_table2, i2)| {
+            let result = p1.partial_cmp(&p2);
+            if result == None || result == Some(Ordering::Equal) {
+                i1.cmp(&i2)
+            } else {
+                result.unwrap()
+            }
+        });
+
+        // let known_playable = augmented_hand_info[0].0 == 1.0;
+        // // if there is a card that is definitely playable, don't ask about playability
+        // if !known_playable {
+        for &(p, card_table, i) in &augmented_hand_info {
             if (p != 0.0) && (p != 1.0) {
                 if add_question(&mut questions, &mut info_remaining, IsPlayable {index: i}) {
                     return questions;
                 }
             }
         }
-        for (i, card_table) in hand_info.iter().enumerate() {
-            if !card_table.is_determined() {
-                let question = CardPossibilityPartition::new(i, info_remaining, card_table, view);
-                if add_question(&mut questions, &mut info_remaining, question) {
-                    return questions;
-                }
+        // }
+
+        for &(p, card_table, i) in &augmented_hand_info {
+            if card_table.is_determined() {
+                continue;
+            }
+            if view.get_board().probability_is_dead(card_table) == 1.0 {
+                continue;
+            }
+            let question = CardPossibilityPartition::new(i, info_remaining, card_table, view);
+            if add_question(&mut questions, &mut info_remaining, question) {
+                return questions;
             }
         }
 
@@ -684,7 +702,7 @@ impl PlayerStrategy for InformationPlayerStrategy {
 
         // hinting is better than discarding dead cards
         // (probably because it stalls the deck-drawing).
-        if view.board.hints_remaining > 1 {
+        if view.board.hints_remaining > 0 {
             if self.someone_else_can_play(view) {
                 return self.get_hint(view);
             }
@@ -695,44 +713,24 @@ impl PlayerStrategy for InformationPlayerStrategy {
             return TurnChoice::Discard(i);
         }
 
-        //     // All cards are plausibly useful.
-        //     // Play the best discardable card, according to the ordering induced by comparing
-        //     //   (is in another hand, is dispensable, value)
-        //     // The higher, the better to discard
-        //     let mut discard_card = None;
-        //     let mut compval = (false, false, 0);
-        //     for card in my_cards {
-        //         let my_compval = (
-        //             view.can_see(card),
-        //             view.board.is_dispensable(card),
-        //             card.value,
-        //         );
-        //         if my_compval > compval {
-        //             discard_card = Some(card);
-        //             compval = my_compval;
-        //         }
-        //     }
-        //     if let Some(card) = discard_card {
-        //         if view.board.hints_remaining > 0 {
-        //             if !view.can_see(card) {
-        //                 return self.throwaway_hint(view);
-        //             }
-        //         }
+        // Play the best discardable card
+        let mut compval = 0.0;
+        let mut index = 0;
+        for (i, card_table) in private_info.iter().enumerate() {
+            let probability_is_seen = card_table.probability_of_predicate(&|card| {
+                view.can_see(card)
+            });
+            let my_compval =
+                20.0 * probability_is_seen
+                + 10.0 * view.board.probability_is_dispensable(card_table)
+                + card_table.average_value();
 
-        //         let index = my_cards.iter().position(|iter_card| {
-        //             card == iter_card
-        //         }).unwrap();
-        //         TurnChoice::Discard(index)
-        //     } else {
-        //         panic!("This shouldn't happen!  No discardable card");
-        //     }
-        // }
-
-        if view.board.hints_remaining > 0 {
-            self.get_hint(view)
-        } else {
-            TurnChoice::Discard(0)
+            if my_compval > compval {
+                compval = my_compval;
+                index = i;
+            }
         }
+        TurnChoice::Discard(index)
     }
 
     fn update(&mut self, turn: &Turn, view: &BorrowedGameView) {

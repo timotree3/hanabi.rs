@@ -216,27 +216,20 @@ impl PlayerStrategy for CheatingPlayerStrategy {
         // Play the best discardable card, according to the ordering induced by comparing
         //   (is in another hand, is dispensable, value)
         // The higher, the better to discard
-        let mut discard_card = None;
+        let mut index = 0;
         let mut compval = (false, false, 0);
-        for card in my_cards {
+        for (i, card) in my_cards.iter().enumerate() {
             let my_compval = (
                 view.can_see(card),
                 view.board.is_dispensable(card),
                 card.value,
             );
             if my_compval > compval {
-                discard_card = Some(card);
+                index = i;
                 compval = my_compval;
             }
         }
-        if let Some(card) = discard_card {
-            let index = my_cards.iter().position(|iter_card| {
-                card == iter_card
-            }).unwrap();
-            TurnChoice::Discard(index)
-        } else {
-            panic!("This shouldn't happen!  No discardable card");
-        }
+        TurnChoice::Discard(index)
     }
     fn update(&mut self, _: &Turn, _: &BorrowedGameView) {
     }

@@ -181,7 +181,7 @@ pub fn simulate<T: ?Sized>(
         }
 
         let percentage = (n_trials - non_perfect_seeds.len() as u32) as f32 / n_trials as f32;
-        info!("Percentage perfect: {:?}%", percentage);
+        info!("Percentage perfect: {:?}%", percentage * 100.0);
         let average = histogram.average();
         info!("Average score: {:?}", average);
         average

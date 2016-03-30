@@ -60,6 +60,9 @@ pub trait CardInfo {
         }
         total_score / total_weight
     }
+    fn average_value(&self) -> f32 {
+        self.weighted_score(&|card| card.value as f32 )
+    }
     fn probability_of_predicate(&self, predicate: &Fn(&Card) -> bool) -> f32 {
         let f = |card: &Card| {
             if predicate(card) { 1.0 } else { 0.0 }

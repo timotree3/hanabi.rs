@@ -217,7 +217,7 @@ impl InformationStrategyConfig {
     }
 }
 impl GameStrategyConfig for InformationStrategyConfig {
-    fn initialize(&self, opts: &GameOptions) -> Box<GameStrategy> {
+    fn initialize(&self, _: &GameOptions) -> Box<GameStrategy> {
         Box::new(InformationStrategy::new())
     }
 }
@@ -274,12 +274,12 @@ impl InformationPlayerStrategy {
         }
 
         let mut augmented_hand_info = hand_info.iter().enumerate().map(|(i, card_table)| {
-            let p = view.get_board().probability_is_playable(card_table);
+            let p = card_table.probability_is_playable(view.get_board());
             (p, card_table, i)
         }).collect::<Vec<_>>();
 
         // sort by probability of play, then by index
-        augmented_hand_info.sort_by(|&(p1, card_table1, i1), &(p2, card_table2, i2)| {
+        augmented_hand_info.sort_by(|&(p1, _, i1), &(p2, _, i2)| {
             let result = p1.partial_cmp(&p2);
             if result == None || result == Some(Ordering::Equal) {
                 i1.cmp(&i2)
@@ -291,7 +291,7 @@ impl InformationPlayerStrategy {
         // let known_playable = augmented_hand_info[0].0 == 1.0;
         // // if there is a card that is definitely playable, don't ask about playability
         // if !known_playable {
-        for &(p, card_table, i) in &augmented_hand_info {
+        for &(p, _, i) in &augmented_hand_info {
             if (p != 0.0) && (p != 1.0) {
                 if add_question(&mut questions, &mut info_remaining, IsPlayable {index: i}) {
                     return questions;
@@ -300,11 +300,11 @@ impl InformationPlayerStrategy {
         }
         // }
 
-        for &(p, card_table, i) in &augmented_hand_info {
+        for &(_, card_table, i) in &augmented_hand_info {
             if card_table.is_determined() {
                 continue;
             }
-            if view.get_board().probability_is_dead(card_table) == 1.0 {
+            if card_table.probability_is_dead(view.get_board()) == 1.0 {
                 continue;
             }
             let question = CardPossibilityPartition::new(i, info_remaining, card_table, view);
@@ -380,6 +380,10 @@ impl InformationPlayerStrategy {
                 question.acknowledge_answer_info(answer_info, &mut hand_info, Box::new(view as &GameView));
             }
         }
+        debug!("Current state of hand_info for {}:", me);
+        for (i, card_table) in hand_info.iter().enumerate() {
+            debug!("  Card {}: {}", i, card_table);
+        }
         self.return_public_info(&me, hand_info);
     }
 
@@ -422,30 +426,6 @@ impl InformationPlayerStrategy {
         }
     }
 
-    // given a hand of cards, represents how badly it will need to play things
-    fn hand_play_value(&self, view: &BorrowedGameView, hand: &Cards/*, all_viewable: HashMap<Color, <Value, usize>> */) -> u32 {
-        // dead = 0 points
-        // indispensible = 5 + (5 - value) points
-        // playable = 1 point
-        let mut value = 0;
-        for card in hand {
-            if view.board.is_dead(card) {
-                continue
-            }
-            if !view.board.is_dispensable(card) {
-                value += 10 - card.value;
-            } else {
-                value += 1;
-            }
-        }
-        value
-    }
-
-    fn estimate_hand_play_value(&self, view: &BorrowedGameView) -> u32 {
-        // TODO: fix this
-        0
-    }
-
     // how badly do we need to play a particular card
     fn get_average_play_score(&self, view: &BorrowedGameView, card_table: &CardPossibilityTable) -> f32 {
         let f = |card: &Card| {
@@ -455,29 +435,25 @@ impl InformationPlayerStrategy {
     }
 
     fn get_play_score(&self, view: &BorrowedGameView, card: &Card) -> i32 {
-        let my_hand_value = self.estimate_hand_play_value(view);
-
         for player in view.board.get_players() {
             if player != self.me {
                 if view.has_card(&player, card) {
-                    let their_hand_value = self.hand_play_value(view, view.get_hand(&player));
-                    // they can play this card, and have less urgent plays than i do
-                    if their_hand_value <= my_hand_value {
-                        return 1;
-                    }
+                    return 1;
                 }
             }
         }
-        // there are no hints
-        // maybe value 5s more?
-        5 + (5 - (card.value as i32))
+        if view.board.is_playable(card) {
+            5 + (5 - (card.value as i32))
+        } else {
+            0
+        }
     }
 
     fn find_useless_card(&self, view: &BorrowedGameView, hand: &Vec<CardPossibilityTable>) -> Option<usize> {
         let mut set: HashSet<Card> = HashSet::new();
 
         for (i, card_table) in hand.iter().enumerate() {
-            if view.board.probability_is_dead(card_table) == 1.0 {
+            if card_table.probability_is_dead(view.board) == 1.0 {
                 return Some(i);
             }
             if let Some(card) = card_table.get_card() {
@@ -667,11 +643,11 @@ impl PlayerStrategy for InformationPlayerStrategy {
         // }
 
         let playable_cards = private_info.iter().enumerate().filter(|&(_, card_table)| {
-            view.board.probability_is_playable(card_table) == 1.0
+            card_table.probability_is_playable(view.board) == 1.0
         }).collect::<Vec<_>>();
 
         if playable_cards.len() > 0 {
-            // TODO: try playing things that have no chance of being dead
+            // TODO: try playing things that have no chance of being indispensable
             // play the best playable card
             // the higher the play_score, the better to play
             let mut play_score = -1.0;
@@ -688,10 +664,42 @@ impl PlayerStrategy for InformationPlayerStrategy {
             return TurnChoice::Play(play_index)
         }
 
+        // make a possibly risky play
+        if view.board.lives_remaining > 1 {
+            let mut risky_playable_cards = private_info.iter().enumerate().filter(|&(_, card_table)| {
+                // card is either playable or dead
+                card_table.probability_of_predicate(&|card| {
+                    view.board.is_playable(card) || view.board.is_dead(card)
+                }) == 1.0
+            }).map(|(i, card_table)| {
+                let p = card_table.probability_is_playable(view.board);
+                (i, card_table, p)
+            }).collect::<Vec<_>>();
+
+            if risky_playable_cards.len() > 0 {
+                risky_playable_cards.sort_by(|c1, c2| {
+                    c1.2.partial_cmp(&c2.2).unwrap_or(Ordering::Equal)
+                });
+
+                let maybe_play = risky_playable_cards[0];
+                if view.board.lives_remaining > 2 {
+                    if maybe_play.2 > 0.5 {
+                        return TurnChoice::Play(maybe_play.0);
+                    }
+                } else {
+                    if maybe_play.2 > 0.7 {
+                        return TurnChoice::Play(maybe_play.0);
+                    }
+                }
+            }
+        }
+
         let discard_threshold =
             view.board.total_cards
             - (COLORS.len() * VALUES.len()) as u32
             - (view.board.num_players * view.board.hand_size);
+
+        // TODO: use the useless card discard as information!
 
         if view.board.discard_size() <= discard_threshold {
             // if anything is totally useless, discard it
@@ -705,8 +713,13 @@ impl PlayerStrategy for InformationPlayerStrategy {
         if view.board.hints_remaining > 0 {
             if self.someone_else_can_play(view) {
                 return self.get_hint(view);
+            } else {
+                print!("This actually happened");
             }
         }
+
+        // TODO: if they discarded a non-useless card, despite there being hints remaining
+        // infer that we have no playable cards
 
         // if anything is totally useless, discard it
         if let Some(i) = self.find_useless_card(view, &private_info) {
@@ -722,7 +735,7 @@ impl PlayerStrategy for InformationPlayerStrategy {
             });
             let my_compval =
                 20.0 * probability_is_seen
-                + 10.0 * view.board.probability_is_dispensable(card_table)
+                + 10.0 * card_table.probability_is_dispensable(view.board)
                 + card_table.average_value();
 
             if my_compval > compval {

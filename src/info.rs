@@ -5,6 +5,7 @@ use std::hash::Hash;
 use std::convert::From;
 
 use cards::*;
+use game::BoardState;
 
 // trait representing information about a card
 pub trait CardInfo {
@@ -34,11 +35,13 @@ pub trait CardInfo {
         }
         v
     }
+
     // get probability weight for the card
     #[allow(unused_variables)]
     fn get_weight(&self, card: &Card) -> f32 {
         1 as f32
     }
+
     fn get_weighted_possibilities(&self) -> Vec<(Card, f32)> {
         let mut v = Vec::new();
         for card in self.get_possibilities() {
@@ -47,6 +50,7 @@ pub trait CardInfo {
         }
         v
     }
+
     fn weighted_score<T>(&self, score_fn: &Fn(&Card) -> T) -> f32
         where f32: From<T>
     {
@@ -60,14 +64,28 @@ pub trait CardInfo {
         }
         total_score / total_weight
     }
+
     fn average_value(&self) -> f32 {
         self.weighted_score(&|card| card.value as f32 )
     }
+
     fn probability_of_predicate(&self, predicate: &Fn(&Card) -> bool) -> f32 {
         let f = |card: &Card| {
             if predicate(card) { 1.0 } else { 0.0 }
         };
         self.weighted_score(&f)
+    }
+
+    fn probability_is_playable(&self, board: &BoardState) -> f32 {
+        self.probability_of_predicate(&|card| board.is_playable(card))
+    }
+
+    fn probability_is_dead(&self, board: &BoardState) -> f32 {
+        self.probability_of_predicate(&|card| board.is_dead(card))
+    }
+
+    fn probability_is_dispensable(&self, board: &BoardState) -> f32 {
+        self.probability_of_predicate(&|card| board.is_dispensable(card))
     }
 
     // mark a whole color as false
@@ -237,7 +255,7 @@ impl fmt::Display for SimpleCardInfo {
 // Can represent information of the form:
 // this card is/isn't possible
 // also, maintains integer weights for the cards
-#[derive(Clone)]
+#[derive(Clone,Debug)]
 pub struct CardPossibilityTable {
     possible: HashMap<Card, u32>,
 }

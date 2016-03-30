@@ -79,26 +79,21 @@ impl CheatingPlayerStrategy {
         })
     }
 
-    // given a hand of cards, represents how badly it will need to play things
-    fn hand_play_value(&self, view: &BorrowedGameView, hand: &Cards/*, all_viewable: HashMap<Color, <Value, u32>> */) -> u32 {
-        // dead = 0 points
-        // indispensible = 5 + (5 - value) points
-        // playable, not in another hand = 2 point
-        // playable = 1 point
-        let mut value = 0;
-        for card in hand {
-            if view.board.is_dead(card) {
-                continue
-            }
-            if !view.board.is_dispensable(card) {
-                value += 20 - card.value;
-            } else if view.board.is_playable(card) {
-                value += 10 - card.value;
-            } else {
-                value += 1;
-            }
+    // represents how badly a card needs to be played
+    fn card_play_value(&self, view: &BorrowedGameView, card: &Card) -> u32 {
+        if view.board.is_dead(card) {
+            return 0;
         }
-        value
+        if !view.board.is_dispensable(card) {
+            10 - card.value
+        } else {
+            1
+        }
+    }
+
+    // given a hand of cards, represents how badly it will need to play things
+    fn hand_play_value(&self, view: &BorrowedGameView, hand: &Cards) -> u32 {
+        hand.iter().map(|card| self.card_play_value(view, card)).fold(0, |a,b| a+b)
     }
 
     // how badly do we need to play a particular card

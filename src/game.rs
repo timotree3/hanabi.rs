@@ -292,21 +292,6 @@ impl BoardState {
         }
     }
 
-    pub fn probability_is_playable<T>(&self, card_info: &T) -> f32 where T: CardInfo {
-        let f = |card: &Card| { self.is_playable(card) };
-        card_info.probability_of_predicate(&f)
-    }
-
-    pub fn probability_is_dead<T>(&self, card_info: &T) -> f32 where T: CardInfo {
-        let f = |card: &Card| { self.is_dead(card) };
-        card_info.probability_of_predicate(&f)
-    }
-
-    pub fn probability_is_dispensable<T>(&self, card_info: &T) -> f32 where T: CardInfo {
-        let f = |card: &Card| { self.is_dispensable(card) };
-        card_info.probability_of_predicate(&f)
-    }
-
     pub fn get_players(&self) -> Vec<Player> {
         (0..self.num_players).collect::<Vec<_>>()
     }

@@ -343,7 +343,7 @@ impl InformationPlayerStrategy {
         answer
     }
 
-    fn get_hint_sum<T>(&self, total_info: u32, view: &T) -> ModulusInformation
+    fn get_hint_sum_info<T>(&self, total_info: u32, view: &T) -> ModulusInformation
         where T: GameView
     {
         let mut sum = ModulusInformation::new(total_info, 0);
@@ -442,29 +442,33 @@ impl InformationPlayerStrategy {
                 }
             }
         }
-        if view.board.is_playable(card) {
-            5 + (5 - (card.value as i32))
-        } else {
-            0
-        }
+        5 + (5 - (card.value as i32))
     }
 
-    fn find_useless_card(&self, view: &BorrowedGameView, hand: &Vec<CardPossibilityTable>) -> Option<usize> {
-        let mut set: HashSet<Card> = HashSet::new();
+    fn find_useless_cards<T>(&self, view: &T, hand: &Vec<CardPossibilityTable>) -> Vec<usize>
+        where T: GameView
+    {
+        let mut useless: HashSet<usize> = HashSet::new();
+        let mut seen: HashMap<Card, usize> = HashMap::new();
 
         for (i, card_table) in hand.iter().enumerate() {
-            if card_table.probability_is_dead(view.board) == 1.0 {
-                return Some(i);
-            }
-            if let Some(card) = card_table.get_card() {
-                if set.contains(&card) {
-                    // found a duplicate card
-                    return Some(i);
+            if card_table.probability_is_dead(view.get_board()) == 1.0 {
+                useless.insert(i);
+            } else {
+                if let Some(card) = card_table.get_card() {
+                    if seen.contains_key(&card) {
+                        // found a duplicate card
+                        useless.insert(i);
+                        useless.insert(*seen.get(&card).unwrap());
+                    } else {
+                        seen.insert(card, i);
+                    }
                 }
-                set.insert(card);
             }
         }
-        return None
+        let mut useless_vec : Vec<usize> = useless.into_iter().collect();
+        useless_vec.sort();
+        return useless_vec;
     }
 
     fn someone_else_can_play(&self, view: &BorrowedGameView) -> bool {
@@ -564,7 +568,7 @@ impl InformationPlayerStrategy {
     fn get_hint(&self, view: &BorrowedGameView) -> TurnChoice {
         let total_info = 3 * (view.board.num_players - 1);
 
-        let hint_info = self.get_hint_sum(total_info, view);
+        let hint_info = self.get_hint_sum_info(total_info, view);
 
         let hint_type = hint_info.value % 3;
         let player_amt = (hint_info.value - hint_type) / 3;
@@ -699,12 +703,16 @@ impl PlayerStrategy for InformationPlayerStrategy {
             - (COLORS.len() * VALUES.len()) as u32
             - (view.board.num_players * view.board.hand_size);
 
-        // TODO: use the useless card discard as information!
+        let public_useless_indices = self.find_useless_cards(view, &self.get_my_public_info());
+        let useless_indices = self.find_useless_cards(view, &private_info);
 
         if view.board.discard_size() <= discard_threshold {
             // if anything is totally useless, discard it
-            if let Some(i) = self.find_useless_card(view, &private_info) {
-                return TurnChoice::Discard(i);
+            if public_useless_indices.len() > 1 {
+                let info = self.get_hint_sum_info(public_useless_indices.len() as u32, view);
+                return TurnChoice::Discard(public_useless_indices[info.value as usize]);
+            } else if useless_indices.len() > 0 {
+                return TurnChoice::Discard(useless_indices[0]);
             }
         }
 
@@ -714,7 +722,7 @@ impl PlayerStrategy for InformationPlayerStrategy {
             if self.someone_else_can_play(view) {
                 return self.get_hint(view);
             } else {
-                print!("This actually happened");
+                // print!("This actually happens");
             }
         }
 
@@ -722,8 +730,11 @@ impl PlayerStrategy for InformationPlayerStrategy {
         // infer that we have no playable cards
 
         // if anything is totally useless, discard it
-        if let Some(i) = self.find_useless_card(view, &private_info) {
-            return TurnChoice::Discard(i);
+        if public_useless_indices.len() > 1 {
+            let info = self.get_hint_sum_info(public_useless_indices.len() as u32, view);
+            return TurnChoice::Discard(public_useless_indices[info.value as usize]);
+        } else if useless_indices.len() > 0 {
+            return TurnChoice::Discard(useless_indices[0]);
         }
 
         // Play the best discardable card
@@ -759,6 +770,16 @@ impl PlayerStrategy for InformationPlayerStrategy {
             }
             TurnChoice::Discard(index) => {
                 if let &TurnResult::Discard(ref card) = &turn.result {
+                    let public_useless_indices = self.find_useless_cards(
+                        &self.last_view, &self.get_player_public_info(&turn.player));
+                    if public_useless_indices.len() > 1 {
+                        // unwrap is safe because *if* a discard happened, and there were known
+                        // dead cards, it must be a dead card
+                        let value = public_useless_indices.iter().position(|&i| i == index).unwrap();
+                        self.update_from_hint_sum(ModulusInformation::new(
+                            public_useless_indices.len() as u32, value as u32
+                        ));
+                    }
                     self.update_public_info_for_discard_or_play(view, &turn.player, index, card);
                 } else {
                     panic!("Got turn choice {:?}, but turn result {:?}",

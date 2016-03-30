@@ -165,18 +165,37 @@ struct CardPossibilityPartition {
 }
 impl CardPossibilityPartition {
     fn new<T>(
-        index: usize, n_partitions: u32, card_table: &CardPossibilityTable, view: &T
+        index: usize, max_n_partitions: u32, card_table: &CardPossibilityTable, view: &T
     ) -> CardPossibilityPartition where T: GameView {
         let mut cur_block = 0;
         let mut partition = HashMap::new();
+        let mut n_partitions = 0;
+
+        let has_dead = card_table.probability_is_dead(view.get_board()) != 0.0;
+
+        let effective_max = if has_dead {
+            max_n_partitions - 1
+        } else {
+            max_n_partitions
+        };
+
         for card in card_table.get_possibilities() {
-            let mut block = cur_block;
-            if view.get_board().is_dead(&card) {
-                block = n_partitions - 1;
-            } else {
-                cur_block = (cur_block + 1) % (n_partitions - 1);
+            if !view.get_board().is_dead(&card) {
+                partition.insert(card.clone(), cur_block);
+                cur_block = (cur_block + 1) % effective_max;
+                if n_partitions < effective_max {
+                    n_partitions += 1;
+                }
             }
-            partition.insert(card.clone(), block);
+        }
+
+        if has_dead {
+            for card in card_table.get_possibilities() {
+                if view.get_board().is_dead(&card) {
+                    partition.insert(card.clone(), n_partitions);
+                }
+            }
+            n_partitions += 1;
         }
 
         CardPossibilityPartition {

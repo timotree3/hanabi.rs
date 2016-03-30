@@ -313,7 +313,9 @@ impl <'a> From<&'a CardCounts> for CardPossibilityTable {
             for &value in VALUES.iter() {
                 let card = Card::new(color, value);
                 let count = counts.remaining(&card);
-                possible.insert(card, count);
+                if count > 0 {
+                    possible.insert(card, count);
+                }
             }
         }
         CardPossibilityTable {

@@ -435,10 +435,12 @@ impl InformationPlayerStrategy {
     }
 
     fn get_play_score(&self, view: &BorrowedGameView, card: &Card) -> i32 {
-        for player in view.board.get_players() {
-            if player != self.me {
-                if view.has_card(&player, card) {
-                    return 1;
+        if view.board.deck_size() > 0 {
+            for player in view.board.get_players() {
+                if player != self.me {
+                    if view.has_card(&player, card) {
+                        return 1;
+                    }
                 }
             }
         }
@@ -574,9 +576,9 @@ impl InformationPlayerStrategy {
         let player_amt = (hint_info.value - hint_type) / 3;
 
         let hint_player = (self.me + 1 + player_amt) % view.board.num_players;
-        let card_index = 0;
 
         let hand = view.get_hand(&hint_player);
+        let card_index = hand.len() -1;
         let hint_card = &hand[card_index];
 
         let hinted = match hint_type {
@@ -601,6 +603,7 @@ impl InformationPlayerStrategy {
                 if let Some(hinted) = hinted_opt {
                     hinted
                 } else {
+                    // Technically possible, but never happens
                     panic!("Found nothing to hint!")
                 }
             }
@@ -621,7 +624,8 @@ impl InformationPlayerStrategy {
         let hinter = self.last_view.board.player;
         let player_amt = (view.board.num_players + hint.player - hinter - 1) % view.board.num_players;
 
-        let hint_type = if result[0] {
+        let card_index = result.len() - 1;
+        let hint_type = if result[card_index] {
             match hint.hinted {
                 Hinted::Value(_) => 0,
                 Hinted::Color(_) => 1,
@@ -686,14 +690,8 @@ impl PlayerStrategy for InformationPlayerStrategy {
                 });
 
                 let maybe_play = risky_playable_cards[0];
-                if view.board.lives_remaining > 2 {
-                    if maybe_play.2 > 0.5 {
-                        return TurnChoice::Play(maybe_play.0);
-                    }
-                } else {
-                    if maybe_play.2 > 0.7 {
-                        return TurnChoice::Play(maybe_play.0);
-                    }
+                if maybe_play.2 > 0.7 {
+                    return TurnChoice::Play(maybe_play.0);
                 }
             }
         }

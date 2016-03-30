@@ -9,7 +9,7 @@ It also explores some implementations, based on ideas from
 [this paper](https://d0474d97-a-62cb3a1a-s-sites.googlegroups.com/site/rmgpgrwc/research-papers/Hanabi_final.pdf).
 
 In particular, it contains a variant of their "information strategy", with some improvements.
-This strategy achieves the best results I am aware of (see below), for n > 3.
+This strategy achieves the best results I am aware of for n > 2 (see below).
 
 Please contact me if:
 - You know of other interesting/good strategy ideas!
@@ -53,5 +53,5 @@ Currently, on seeds 0-9999, we have:
           |   2p    |   3p    |   4p    |   5p    |
 ----------|---------|---------|---------|---------|
 cheating  | 24.8600 | 24.9781 | 24.9715 | 24.9583 |
-info      | 17.147  | 23.357  | 24.76   | 24.824  |
+info      | 17.249  | 23.394  | 24.762  | 24.835  |
 

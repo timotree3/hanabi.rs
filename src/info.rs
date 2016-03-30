@@ -305,6 +305,20 @@ impl CardPossibilityTable {
     pub fn is_determined(&self) -> bool {
         self.get_possibilities().len() == 1
     }
+
+    pub fn color_determined(&self) -> bool {
+        self.get_possibilities()
+            .iter().map(|card| card.color)
+            .collect::<HashSet<_>>()
+            .len() == 1
+    }
+
+    pub fn value_determined(&self) -> bool {
+        self.get_possibilities()
+            .iter().map(|card| card.value)
+            .collect::<HashSet<_>>()
+            .len() == 1
+    }
 }
 impl <'a> From<&'a CardCounts> for CardPossibilityTable {
     fn from(counts: &'a CardCounts) -> CardPossibilityTable {

@@ -13,7 +13,7 @@ This strategy achieves the best results I am aware of for n > 2 (see below).
 
 Please contact me if:
 - You know of other interesting/good strategy ideas!
-- Have questions about the framework
+- Have questions about the framework or existing strategies
 
 Some similar projects I am aware of:
 - https://github.com/rjtobin/HanSim (written for the paper mentioned above)
@@ -30,20 +30,33 @@ Usage: target/debug/rust_hanabi [options]
 
 Options:
     -l, --loglevel LOGLEVEL
-                        Log level, one of 'trace', 'debug', 'info', 'warn', and 'error'
+                        Log level, one of 'trace', 'debug', 'info', 'warn',
+                        and 'error'
     -n, --ntrials NTRIALS
-                        Number of games to simulate
+                        Number of games to simulate (default 1)
     -t, --nthreads NTHREADS
-                        Number of threads to use for simulation
-    -s, --seed SEED     Seed for PRNG
+                        Number of threads to use for simulation (default 1)
+    -s, --seed SEED     Seed for PRNG (default random)
     -p, --nplayers NPLAYERS
                         Number of players
+    -g, --strategy STRATEGY
+                        Which strategy to use. One of 'random', 'cheat', and
+                        'info'
     -h, --help          Print this help menu
 ```
 
 For example,
 
-`cargo run -- -n 10000 -s 0 -t 2 -p 3`
+```
+cargo run -- -n 10000 -s 0 -t 2 -p 5 -g cheat
+```
+
+Or, if the simulation is slow (as the info strategy is),
+
+```
+cargo build --release
+time ./target/release/rust_hanabi -n 10000 -s 0 -t 2 -p 5 -g info
+```
 
 ## Results
 

@@ -9,20 +9,11 @@ use game::BoardState;
 
 // trait representing information about a card
 pub trait CardInfo {
-    // get all a-priori possibilities
-    fn get_all_possibilities(&self) -> Vec<Card> {
-        let mut v = Vec::new();
-        for &color in COLORS.iter() {
-            for &value in VALUES.iter() {
-                v.push(Card::new(color, value));
-            }
-        }
-        v
-    }
     // whether the card is possible
     fn is_possible(&self, card: &Card) -> bool;
 
     // mark all current possibilities for the card
+    // this should generally be overridden, for efficiency
     fn get_possibilities(&self) -> Vec<Card> {
         let mut v = Vec::new();
         for &color in COLORS.iter() {
@@ -89,16 +80,16 @@ pub trait CardInfo {
     }
 
     // mark a whole color as false
-    fn mark_color_false(&mut self, color: &Color);
+    fn mark_color_false(&mut self, color: Color);
     // mark a color as correct
-    fn mark_color_true(&mut self, color: &Color) {
-        for other_color in COLORS.iter() {
+    fn mark_color_true(&mut self, color: Color) {
+        for &other_color in COLORS.iter() {
             if other_color != color {
                 self.mark_color_false(other_color);
             }
         }
     }
-    fn mark_color(&mut self, color: &Color, is_color: bool) {
+    fn mark_color(&mut self, color: Color, is_color: bool) {
         if is_color {
             self.mark_color_true(color);
         } else {
@@ -107,16 +98,16 @@ pub trait CardInfo {
     }
 
     // mark a whole value as false
-    fn mark_value_false(&mut self, value: &Value);
+    fn mark_value_false(&mut self, value: Value);
     // mark a value as correct
-    fn mark_value_true(&mut self, value: &Value) {
-        for other_value in VALUES.iter() {
+    fn mark_value_true(&mut self, value: Value) {
+        for &other_value in VALUES.iter() {
             if other_value != value {
                 self.mark_value_false(other_value);
             }
         }
     }
-    fn mark_value(&mut self, value: &Value, is_value: bool) {
+    fn mark_value(&mut self, value: Value, is_value: bool) {
         if is_value {
             self.mark_value_true(value);
         } else {
@@ -127,7 +118,7 @@ pub trait CardInfo {
 
 
 // Represents hinted information about possible values of type T
-pub trait Info<T> where T: Hash + Eq + Clone {
+pub trait Info<T> where T: Hash + Eq + Clone + Copy {
     // get all a-priori possibilities
     fn get_all_possibilities() -> Vec<T>;
 
@@ -141,8 +132,8 @@ pub trait Info<T> where T: Hash + Eq + Clone {
         self.get_possibility_set().iter().map(|t| t.clone()).collect::<Vec<T>>()
     }
 
-    fn is_possible(&self, value: &T) -> bool {
-        self.get_possibility_set().contains(value)
+    fn is_possible(&self, value: T) -> bool {
+        self.get_possibility_set().contains(&value)
     }
 
     fn initialize() -> HashSet<T> {
@@ -153,17 +144,17 @@ pub trait Info<T> where T: Hash + Eq + Clone {
         possible_map
     }
 
-    fn mark_true(&mut self, value: &T) {
+    fn mark_true(&mut self, value: T) {
         let possible = self.get_mut_possibility_set();
         possible.clear();
         possible.insert(value.clone());
     }
 
-    fn mark_false(&mut self, value: &T) {
-        self.get_mut_possibility_set().remove(value);
+    fn mark_false(&mut self, value: T) {
+        self.get_mut_possibility_set().remove(&value);
     }
 
-    fn mark(&mut self, value: &T, info: bool) {
+    fn mark(&mut self, value: T, info: bool) {
         if info {
             self.mark_true(value);
         } else {
@@ -220,30 +211,30 @@ impl CardInfo for SimpleCardInfo {
         v
     }
     fn is_possible(&self, card: &Card) -> bool {
-        self.color_info.is_possible(&card.color) &&
-        self.value_info.is_possible(&card.value)
+        self.color_info.is_possible(card.color) &&
+        self.value_info.is_possible(card.value)
 
     }
-    fn mark_color_false(&mut self, color: &Color) {
+    fn mark_color_false(&mut self, color: Color) {
         self.color_info.mark_false(color);
 
     }
-    fn mark_value_false(&mut self, value: &Value) {
+    fn mark_value_false(&mut self, value: Value) {
         self.value_info.mark_false(value);
     }
 }
 impl fmt::Display for SimpleCardInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut string = String::new();
-        for color in &COLORS {
+        for &color in &COLORS {
             if self.color_info.is_possible(color) {
-                string.push(display_color(color));
+                string.push(color);
             }
         }
         // while string.len() < COLORS.len() + 1 {
         string.push(' ');
         //}
-        for value in &VALUES {
+        for &value in &VALUES {
             if self.value_info.is_possible(value) {
                 string.push_str(&format!("{}", value));
             }
@@ -346,15 +337,15 @@ impl CardInfo for CardPossibilityTable {
         cards.sort();
         cards
     }
-    fn mark_color_false(&mut self, color: &Color) {
+    fn mark_color_false(&mut self, color: Color) {
         for &value in VALUES.iter() {
             self.mark_false(&Card::new(color, value));
         }
 
     }
-    fn mark_value_false(&mut self, value: &Value) {
+    fn mark_value_false(&mut self, value: Value) {
         for &color in COLORS.iter() {
-            self.mark_false(&Card::new(color, value.clone()));
+            self.mark_false(&Card::new(color, value));
         }
     }
     fn get_weight(&self, card: &Card) -> f32 {

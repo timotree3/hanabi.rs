@@ -1,19 +1,16 @@
 use std::collections::HashMap;
 use std::fmt;
 
-pub type Color = &'static str;
-pub const COLORS: [Color; 5] = ["red", "yellow", "green", "blue", "white"];
-pub fn display_color(color: Color) -> char {
-    color.chars().next().unwrap()
-}
+pub type Color = char;
+pub const COLORS: [Color; 5] = ['r', 'y', 'g', 'b', 'w'];
 
 pub type Value = u32;
 // list of values, assumed to be small to large
 pub const VALUES : [Value; 5] = [1, 2, 3, 4, 5];
 pub const FINAL_VALUE : Value = 5;
 
-pub fn get_count_for_value(value: &Value) -> u32 {
-    match *value {
+pub fn get_count_for_value(value: Value) -> u32 {
+    match value {
         1         => 3,
         2 | 3 | 4 => 2,
         5         => 1,
@@ -33,7 +30,7 @@ impl Card {
 }
 impl fmt::Display for Card {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}{}", display_color(self.color), self.value)
+        write!(f, "{}{}", self.color, self.value)
     }
 }
 
@@ -46,9 +43,9 @@ pub struct CardCounts {
 impl CardCounts {
     pub fn new() -> CardCounts {
         let mut counts = HashMap::new();
-        for color in COLORS.iter() {
-            for value in VALUES.iter() {
-                counts.insert(Card::new(*color, *value), 0);
+        for &color in COLORS.iter() {
+            for &value in VALUES.iter() {
+                counts.insert(Card::new(color, value), 0);
             }
         }
         CardCounts {
@@ -62,7 +59,7 @@ impl CardCounts {
 
     pub fn remaining(&self, card: &Card) -> u32 {
         let count = self.get_count(card);
-        get_count_for_value(&card.value) - count
+        get_count_for_value(card.value) - count
     }
 
     pub fn increment(&mut self, card: &Card) {
@@ -72,17 +69,17 @@ impl CardCounts {
 }
 impl fmt::Display for CardCounts {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for color in COLORS.iter() {
+        for &color in COLORS.iter() {
             try!(f.write_str(&format!(
-                "{}: ", display_color(color),
+                "{}: ", color,
             )));
-            for value in VALUES.iter() {
-                let count = self.get_count(&Card::new(color, *value));
+            for &value in VALUES.iter() {
+                let count = self.get_count(&Card::new(color, value));
                 let total = get_count_for_value(value);
                 try!(f.write_str(&format!(
                     "{}/{} {}s", count, total, value
                 )));
-                if *value != FINAL_VALUE {
+                if value != FINAL_VALUE {
                     try!(f.write_str(", "));
                 }
             }

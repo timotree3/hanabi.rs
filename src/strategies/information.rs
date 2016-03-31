@@ -27,7 +27,7 @@ impl ModulusInformation {
         self.modulus = self.modulus * other.modulus;
     }
 
-    pub fn emit(&mut self, modulus: u32) -> Self {
+    pub fn split(&mut self, modulus: u32) -> Self {
         assert!(self.modulus >= modulus);
         assert!(self.modulus % modulus == 0);
         let original_modulus = self.modulus;
@@ -68,16 +68,17 @@ trait Question {
     fn info_amount(&self) -> u32;
     // get the answer to this question, given cards
     fn answer(&self, &Cards, &OwnedGameView) -> u32;
+    // process the answer to this question, updating card info
+    fn acknowledge_answer(
+        &self, value: u32, &mut Vec<CardPossibilityTable>, &OwnedGameView
+    );
+
     fn answer_info(&self, hand: &Cards, view: &OwnedGameView) -> ModulusInformation {
         ModulusInformation::new(
             self.info_amount(),
             self.answer(hand, view)
         )
     }
-    // process the answer to this question, updating card info
-    fn acknowledge_answer(
-        &self, value: u32, &mut Vec<CardPossibilityTable>, &OwnedGameView
-    );
 
     fn acknowledge_answer_info(
         &self,
@@ -353,7 +354,7 @@ impl InformationPlayerStrategy {
         {
             let view = &self.last_view;
             for question in questions {
-                let answer_info = hint.emit(question.info_amount());
+                let answer_info = hint.split(question.info_amount());
                 question.acknowledge_answer_info(answer_info, &mut hand_info, view);
             }
         }
@@ -487,12 +488,12 @@ impl InformationPlayerStrategy {
         let mut info = self.get_player_public_info_mut(&hint.player);
         let zip_iter = info.iter_mut().zip(matches);
         match hint.hinted {
-            Hinted::Color(ref color) => {
+            Hinted::Color(color) => {
                 for (card_info, matched) in zip_iter {
                     card_info.mark_color(color, *matched);
                 }
             }
-            Hinted::Value(ref value) => {
+            Hinted::Value(value) => {
                 for (card_info, matched) in zip_iter {
                     card_info.mark_value(value, *matched);
                 }
@@ -519,6 +520,9 @@ impl InformationPlayerStrategy {
                 info.push(new_card_table);
             }
         }
+
+        // TODO: decrement weight counts for fully determined cards,
+        // ahead of time
 
         // note: other_player could be player, as well
         // in particular, we will decrement the newly drawn card
@@ -574,6 +578,16 @@ impl InformationPlayerStrategy {
 
     fn get_hint(&self) -> TurnChoice {
         let view = &self.last_view;
+
+        // Can give up to 3(n-1) hints
+        // For any given player with at least 4 cards, and index i, there are at least 3 hints that can be given.
+        // 0. a value hint on card i
+        // 1. a color hint on card i
+        // 2. any hint not involving card i
+
+        // TODO: make it so space of hints is larger when there is
+        // knowledge about the cards?
+
         let total_info = 3 * (view.board.num_players - 1);
 
         let hint_info = self.get_hint_sum_info(total_info, view);
@@ -586,13 +600,6 @@ impl InformationPlayerStrategy {
         let hand = view.get_hand(&hint_player);
         let card_index = self.get_index_for_hint(self.get_player_public_info(&hint_player), view);
         let hint_card = &hand[card_index];
-
-        // For any given player with at least 4 cards, and index i, there are at least 3 hints that can be given.
-        // 0. a value hint on card i
-        // 1. a color hint on card i
-        // 2. any hint not involving card i
-        //
-        // for 4 players, can give 6 distinct hints
 
 
         let hinted = match hint_type {

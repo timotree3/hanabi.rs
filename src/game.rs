@@ -116,16 +116,16 @@ impl PlayerState {
 
     pub fn reveal(&mut self, hinted: &Hinted) -> Vec<bool> {
         match hinted {
-            &Hinted::Color(ref color) => {
+            &Hinted::Color(color) => {
                 self.hand_info_iter_mut().map(|(card, info)| {
-                    let matches = card.color == *color;
+                    let matches = card.color == color;
                     info.mark_color(color, matches);
                     matches
                 }).collect::<Vec<_>>()
             }
-            &Hinted::Value(ref value) => {
+            &Hinted::Value(value) => {
                 self.hand_info_iter_mut().map(|(card, info)| {
-                    let matches = card.value == *value;
+                    let matches = card.value == value;
                     info.mark_value(value, matches);
                     matches
                 }).collect::<Vec<_>>()
@@ -137,11 +137,11 @@ impl PlayerState {
 fn new_deck(seed: u32) -> Cards {
     let mut deck: Cards = Cards::new();
 
-    for color in COLORS.iter() {
-        for value in VALUES.iter() {
+    for &color in COLORS.iter() {
+        for &value in VALUES.iter() {
             let count = get_count_for_value(value);
             for _ in 0..count {
-                deck.push(Card::new(color, value.clone()));
+                deck.push(Card::new(color, value));
             }
         }
     };
@@ -181,7 +181,7 @@ pub struct BoardState {
 impl BoardState {
     pub fn new(opts: &GameOptions, seed: u32) -> BoardState {
         let mut fireworks : HashMap<Color, Firework> = HashMap::new();
-        for color in COLORS.iter() {
+        for &color in COLORS.iter() {
             fireworks.insert(color, Firework::new(color));
         }
         let deck = new_deck(seed);
@@ -213,34 +213,34 @@ impl BoardState {
         }
     }
 
-    pub fn get_firework(&self, color: &Color) -> &Firework {
-        self.fireworks.get(color).unwrap()
+    pub fn get_firework(&self, color: Color) -> &Firework {
+        self.fireworks.get(&color).unwrap()
     }
 
-    fn get_firework_mut(&mut self, color: &Color) -> &mut Firework {
-        self.fireworks.get_mut(color).unwrap()
+    fn get_firework_mut(&mut self, color: Color) -> &mut Firework {
+        self.fireworks.get_mut(&color).unwrap()
     }
 
     // returns whether a card would place on a firework
     pub fn is_playable(&self, card: &Card) -> bool {
-        Some(card.value) == self.get_firework(&card.color).desired_value()
+        Some(card.value) == self.get_firework(card.color).desired_value()
     }
 
     // best possible value we can get for firework of that color,
     // based on looking at discard + fireworks
-    fn highest_attainable(&self, color: &Color) -> Value {
-        let firework = self.fireworks.get(color).unwrap();
+    fn highest_attainable(&self, color: Color) -> Value {
+        let firework = self.fireworks.get(&color).unwrap();
         if firework.complete() {
             return FINAL_VALUE;
         }
         let desired = firework.desired_value().unwrap();
 
-        for value in VALUES.iter() {
-            if *value < desired {
+        for &value in VALUES.iter() {
+            if value < desired {
                 // already have these cards
                 continue
             }
-            let needed_card = Card::new(color, value.clone());
+            let needed_card = Card::new(color, value);
             if self.discard.has_all(&needed_card) {
                 // already discarded all of these
                 return value - 1;
@@ -251,7 +251,7 @@ impl BoardState {
 
     // is never going to play, based on discard + fireworks
     pub fn is_dead(&self, card: &Card) -> bool {
-        let firework = self.fireworks.get(card.color).unwrap();
+        let firework = self.fireworks.get(&card.color).unwrap();
         if firework.complete() {
             true
         } else {
@@ -259,14 +259,14 @@ impl BoardState {
             if card.value < desired {
                 true
             } else {
-                card.value > self.highest_attainable(&card.color)
+                card.value > self.highest_attainable(card.color)
             }
         }
     }
 
     // can be discarded without necessarily sacrificing score, based on discard + fireworks
     pub fn is_dispensable(&self, card: &Card) -> bool {
-        let firework = self.fireworks.get(card.color).unwrap();
+        let firework = self.fireworks.get(&card.color).unwrap();
         if firework.complete() {
             true
         } else {
@@ -274,7 +274,7 @@ impl BoardState {
             if card.value < desired {
                 true
             } else {
-                if card.value > self.highest_attainable(&card.color) {
+                if card.value > self.highest_attainable(card.color) {
                     true
                 } else {
                     self.discard.remaining(&card) != 1
@@ -342,7 +342,7 @@ impl fmt::Display for BoardState {
             "{}/{} lives remaining\n", self.lives_remaining, self.lives_total
         )));
         try!(f.write_str("Fireworks:\n"));
-        for color in COLORS.iter() {
+        for &color in COLORS.iter() {
             try!(f.write_str(&format!("  {}\n", self.get_firework(color))));
         }
         try!(f.write_str("Discard:\n"));
@@ -597,7 +597,7 @@ impl GameState {
                     let playable = self.board.is_playable(&card);
                     if playable {
                         {
-                            let firework = self.board.get_firework_mut(&card.color);
+                            let firework = self.board.get_firework_mut(card.color);
                             debug!("Successfully played {}!", card);
                             firework.place(&card);
                         }

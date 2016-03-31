@@ -173,12 +173,12 @@ impl CardPossibilityPartition {
 
         let has_dead = card_table.probability_is_dead(view.get_board()) != 0.0;
 
+        // TODO: group things of different colors and values?
         let effective_max = if has_dead {
             max_n_partitions - 1
         } else {
             max_n_partitions
         };
-
         for card in card_table.get_possibilities() {
             if !view.get_board().is_dead(&card) {
                 partition.insert(card.clone(), cur_block);
@@ -311,12 +311,16 @@ impl InformationPlayerStrategy {
         // // if there is a card that is definitely playable, don't ask about playability
         // if !known_playable {
         for &(p, _, i) in &augmented_hand_info {
-            if (p != 0.0) && (p != 1.0) {
+            // if the play probability is very low, ignore.
+            // probably there's only 1-2 possible cards for it, out of many
+            if (p > 0.1) && (p < 1.0) {
                 if add_question(&mut questions, &mut info_remaining, IsPlayable {index: i}) {
                     return questions;
                 }
             }
         }
+        // } else {
+        //     debug!("Something known playable");
         // }
 
         for &(_, card_table, i) in &augmented_hand_info {
@@ -587,12 +591,13 @@ impl InformationPlayerStrategy {
         if card_table.probability_is_dead(view.get_board()) == 1.0 {
             return 0;
         }
-        let mut score = -1;
+        // Do something more intelligent?
+        let mut score = 1;
         if !card_table.color_determined() {
-            score -= 1;
+            score += 1;
         }
         if !card_table.value_determined() {
-            score -= 1;
+            score += 1;
         }
         return score;
     }
@@ -602,7 +607,7 @@ impl InformationPlayerStrategy {
     {
         let mut scores = info.iter().enumerate().map(|(i, card_table)| {
             let score = self.get_hint_index_score(card_table, view);
-            (score, i)
+            (-score, i)
         }).collect::<Vec<_>>();
         scores.sort();
         scores[0].1

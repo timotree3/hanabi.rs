@@ -45,13 +45,12 @@ For example,
 
 `cargo run -- -n 10000 -s 0 -t 2 -p 3`
 
-## Results (sparsely updated)
+## Results
 
 Currently, on seeds 0-9999, we have:
-(info strategy is only ran on 1000 seeds)
 
           |   2p    |   3p    |   4p    |   5p    |
 ----------|---------|---------|---------|---------|
 cheating  | 24.8600 | 24.9781 | 24.9715 | 24.9583 |
-info      | 17.136  | 23.445  | 24.779  | 24.863  |
+info      | 18.5959 | 23.8846 | 24.7753 | 24.8719 |
 

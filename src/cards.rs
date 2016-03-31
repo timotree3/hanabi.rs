@@ -105,10 +105,6 @@ impl Discard {
         }
     }
 
-    pub fn get_count(&self, card: &Card) -> u32 {
-        self.counts.get_count(card)
-    }
-
     pub fn has_all(&self, card: &Card) -> bool {
         self.counts.remaining(card) == 0
     }

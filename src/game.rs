@@ -226,15 +226,6 @@ impl BoardState {
         Some(card.value) == self.get_firework(&card.color).desired_value()
     }
 
-    pub fn was_played(&self, card: &Card) -> bool {
-        let firework = self.fireworks.get(card.color).unwrap();
-        if firework.complete() {
-            true
-        } else {
-            card.value < firework.desired_value().unwrap()
-        }
-    }
-
     // best possible value we can get for firework of that color,
     // based on looking at discard + fireworks
     fn highest_attainable(&self, color: &Color) -> Value {

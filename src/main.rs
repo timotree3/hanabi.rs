@@ -46,19 +46,19 @@ fn main() {
                 "Log level, one of 'trace', 'debug', 'info', 'warn', and 'error'",
                 "LOGLEVEL");
     opts.optopt("n", "ntrials",
-                "Number of games to simulate",
+                "Number of games to simulate (default 1)",
                 "NTRIALS");
     opts.optopt("t", "nthreads",
-                "Number of threads to use for simulation",
+                "Number of threads to use for simulation (default 1)",
                 "NTHREADS");
     opts.optopt("s", "seed",
-                "Seed for PRNG",
+                "Seed for PRNG (default random)",
                 "SEED");
     opts.optopt("p", "nplayers",
                 "Number of players",
                 "NPLAYERS");
     opts.optopt("g", "strategy",
-                "Which strategy to use.  One of 'random' and 'cheat'",
+                "Which strategy to use.  One of 'random', 'cheat', and 'info'",
                 "STRATEGY");
     opts.optflag("h", "help",
                  "Print this help menu");

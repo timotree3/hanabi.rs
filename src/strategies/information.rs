@@ -4,21 +4,6 @@ use std::cmp::Ordering;
 use simulator::*;
 use game::*;
 
-// strategy that recommends other players an action.
-//
-// 50 cards, 25 plays, 25 left
-// with 5 players:
-//  - only 5 + 8 hints total.  each player goes through 10 cards
-// with 4 players:
-//  - only 9 + 8 hints total.  each player goes through 12.5 cards
-//
-// For any given player with at least 4 cards, and index i, there are at least 3 hints that can be given.
-// 0. a value hint on card i
-// 1. a color hint on card i
-// 2. any hint not involving card i
-//
-// for 4 players, can give 6 distinct hints
-
 #[derive(Debug,Clone)]
 struct ModulusInformation {
     modulus: u32,
@@ -123,33 +108,6 @@ impl Question for IsPlayable {
         let possible = card_table.get_possibilities();
         for card in &possible {
             if view.get_board().is_playable(card) {
-                if answer == 0 { card_table.mark_false(card); }
-            } else {
-                if answer == 1 { card_table.mark_false(card); }
-            }
-        }
-    }
-}
-
-struct IsDead {
-    index: usize,
-}
-impl Question for IsDead {
-    fn info_amount(&self) -> u32 { 2 }
-    fn answer(&self, hand: &Cards, view: &OwnedGameView) -> u32 {
-        let ref card = hand[self.index];
-        if view.get_board().is_dead(card) { 1 } else { 0 }
-    }
-    fn acknowledge_answer(
-        &self,
-        answer: u32,
-        hand_info: &mut Vec<CardPossibilityTable>,
-        view: &OwnedGameView,
-    ) {
-        let ref mut card_table = hand_info[self.index];
-        let possible = card_table.get_possibilities();
-        for card in &possible {
-            if view.get_board().is_dead(card) {
                 if answer == 0 { card_table.mark_false(card); }
             } else {
                 if answer == 1 { card_table.mark_false(card); }
@@ -299,7 +257,8 @@ impl InformationPlayerStrategy {
 
         // sort by probability of play, then by index
         augmented_hand_info.sort_by(|&(p1, _, i1), &(p2, _, i2)| {
-            let result = p1.partial_cmp(&p2);
+            // *higher* probabilities are better
+            let result = p2.partial_cmp(&p1);
             if result == None || result == Some(Ordering::Equal) {
                 i1.cmp(&i2)
             } else {
@@ -628,6 +587,14 @@ impl InformationPlayerStrategy {
         let card_index = self.get_index_for_hint(self.get_player_public_info(&hint_player), view);
         let hint_card = &hand[card_index];
 
+        // For any given player with at least 4 cards, and index i, there are at least 3 hints that can be given.
+        // 0. a value hint on card i
+        // 1. a color hint on card i
+        // 2. any hint not involving card i
+        //
+        // for 4 players, can give 6 distinct hints
+
+
         let hinted = match hint_type {
             0 => {
                 Hinted::Value(hint_card.value)
@@ -650,7 +617,7 @@ impl InformationPlayerStrategy {
                 if let Some(hinted) = hinted_opt {
                     hinted
                 } else {
-                    // Technically possible, but never happens
+                    // TODO: Technically possible, but never happens
                     panic!("Found nothing to hint!")
                 }
             }

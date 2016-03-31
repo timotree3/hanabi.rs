@@ -270,9 +270,9 @@ impl CardPossibilityTable {
     }
 
     // a bit more efficient
-    pub fn borrow_possibilities<'a>(&'a self) -> Vec<&'a Card> {
-        self.possible.keys().collect::<Vec<_>>()
-    }
+    // pub fn borrow_possibilities<'a>(&'a self) -> Vec<&'a Card> {
+    //     self.possible.keys().collect::<Vec<_>>()
+    // }
 
     pub fn decrement_weight_if_possible(&mut self, card: &Card) {
         if self.is_possible(card) {

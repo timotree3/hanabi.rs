@@ -9,7 +9,7 @@ pub use cards::*;
 
 pub type Player = u32;
 
-#[derive(Debug,Clone)]
+#[derive(Debug,Clone,Hash,PartialEq,Eq)]
 pub enum Hinted {
     Color(Color),
     Value(Value),

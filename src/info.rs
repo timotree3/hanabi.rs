@@ -34,12 +34,17 @@ pub trait CardInfo {
     }
 
     fn get_weighted_possibilities(&self) -> Vec<(Card, f32)> {
-        let mut v = Vec::new();
-        for card in self.get_possibilities() {
-            let weight = self.get_weight(&card);
-            v.push((card, weight));
-        }
-        v
+        self.get_possibilities().into_iter()
+            .map(|card| {
+                let weight = self.get_weight(&card);
+                (card, weight)
+            }).collect::<Vec<_>>()
+    }
+
+    fn total_weight(&self) -> f32 {
+        self.get_possibilities().iter()
+            .map(|card| self.get_weight(&card))
+            .fold(0.0, |a, b| a+b)
     }
 
     fn weighted_score<T>(&self, score_fn: &Fn(&Card) -> T) -> f32

@@ -47,6 +47,9 @@ fn main() {
     opts.optopt("n", "ntrials",
                 "Number of games to simulate (default 1)",
                 "NTRIALS");
+    opts.optopt("o", "output",
+                "Number of games after which to print an update",
+                "OUTPUT_FREQ");
     opts.optopt("t", "nthreads",
                 "Number of threads to use for simulation (default 1)",
                 "NTHREADS");
@@ -97,6 +100,8 @@ fn main() {
 
     let seed = matches.opt_str("s").map(|seed_str| { u32::from_str(&seed_str).unwrap() });
 
+    let progress_info = matches.opt_str("o").map(|freq_str| { u32::from_str(&freq_str).unwrap() });
+
     let n_threads = u32::from_str(&matches.opt_str("t").unwrap_or("1".to_string())).unwrap();
 
     let n_players = u32::from_str(&matches.opt_str("p").unwrap_or("4".to_string())).unwrap();
@@ -138,5 +143,5 @@ fn main() {
             panic!("Unexpected strategy argument {}", strategy_str);
         },
     };
-    simulator::simulate(&game_opts, strategy_config, seed, n, n_threads);
+    simulator::simulate(&game_opts, strategy_config, seed, n, n_threads, progress_info);
 }

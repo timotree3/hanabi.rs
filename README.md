@@ -21,7 +21,7 @@ Some similar projects I am aware of:
 
 ## Setup
 
-Install rust/rustc and cargo, and change the options in main.rs appropriately.
+Install rust/rustc and cargo. Then,
 
 `cargo run -- -h`
 
@@ -48,30 +48,37 @@ Options:
 For example,
 
 ```
-cargo run -- -n 10000 -s 0 -t 2 -p 5 -g cheat
+cargo run -- -n 10000 -s 0 -p 5 -g cheat
 ```
 
 Or, if the simulation is slow (as the info strategy is),
 
 ```
-cargo run --release -- -n 10000 -s 0 -t 2 -p 5 -g info
+time cargo run --release -- -n 10000 -o 1000 -s 0 -t 4 -p 5 -g info
+```
+
+Or, to see a transcript of a single game:
+```
+cargo run -- -s 2222 -p 5 -g info -l debug | less
 ```
 
 ## Results
 
-Currently, on seeds 0-9999, we have:
+On seeds 0-9999, we have:
 
-            |   2p    |   3p    |   4p    |   5p    |
-------------|---------|---------|---------|---------|
-cheating    | 24.8600 | 24.9781 | 24.9715 | 24.9583 |
-information | 18.5726 | 23.8806 | 24.7722 | 24.8756 |
+          |   2p    |   3p    |   4p    |   5p    |
+----------|---------|---------|---------|---------|
+cheating  | 24.8600 | 24.9781 | 24.9715 | 24.9583 |
+info      | 18.5909 | 24.1655 | 24.7922 | 24.8784 |
+
 
 To reproduce:
 ```
-n=1000000
+n=10000   # number of rounds to simulate
+t=4       # number of threads
 for strategy in info cheat; do
   for p in $(seq 2 5); do
-    time cargo run --release -- -n $n -s 0 -t 4 -p $p -g $strategy;
+    time cargo run --release -- -n $n -s 0 -t $t -p $p -g $strategy;
   done
 done
 ```

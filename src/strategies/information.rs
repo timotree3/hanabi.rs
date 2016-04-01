@@ -262,9 +262,9 @@ impl InformationPlayerStrategy {
 
         let mut augmented_hand_info = hand_info.iter().enumerate()
             .filter(|&(_, card_table)| {
-                if card_table.is_determined() {
+                if card_table.probability_is_dead(&view.board) == 1.0 {
                     false
-                } else if card_table.probability_is_dead(&view.board) == 1.0 {
+                } else if card_table.is_determined() {
                     false
                 } else {
                     true
@@ -371,10 +371,6 @@ impl InformationPlayerStrategy {
                 let answer_info = hint.split(question.info_amount());
                 question.acknowledge_answer_info(answer_info, &mut hand_info, view);
             }
-        }
-        debug!("Current state of hand_info for {}:", me);
-        for (i, card_table) in hand_info.iter().enumerate() {
-            debug!("  Card {}: {}", i, card_table);
         }
         self.return_public_info(&me, hand_info);
     }
@@ -554,6 +550,9 @@ impl InformationPlayerStrategy {
         if card_table.probability_is_dead(view.get_board()) == 1.0 {
             return 0;
         }
+        if card_table.is_determined() {
+            return 0;
+        }
         // Do something more intelligent?
         let mut score = 1;
         if !card_table.color_determined() {
@@ -572,6 +571,53 @@ impl InformationPlayerStrategy {
         }).collect::<Vec<_>>();
         scores.sort();
         scores[0].1
+    }
+
+    // how good is it to give this hint to this player?
+    fn hint_goodness(&self, hinted: &Hinted, hint_player: &Player, view: &OwnedGameView) -> f32 {
+        let hand = view.get_hand(&hint_player);
+
+        // get post-hint hand_info
+        let mut hand_info = self.get_player_public_info(hint_player).clone();
+        let total_info  = 3 * (view.board.num_players - 1);
+        let questions = Self::get_questions(total_info, view, &hand_info);
+        for question in questions {
+            let answer = question.answer(hand, view);
+            question.acknowledge_answer(answer, &mut hand_info, view);
+        }
+
+        let mut goodness = 1.0;
+        for (i, card_table) in hand_info.iter_mut().enumerate() {
+            let card = &hand[i];
+            if card_table.probability_is_dead(&view.board) == 1.0 {
+                continue;
+            }
+            if card_table.is_determined() {
+                continue;
+            }
+            let old_weight = card_table.total_weight();
+            match *hinted {
+                Hinted::Color(color) => {
+                    card_table.mark_color(color, color == card.color)
+                }
+                Hinted::Value(value) => {
+                    card_table.mark_value(value, value == card.value)
+                }
+            };
+            let new_weight = card_table.total_weight();
+            assert!(new_weight <= old_weight);
+            let bonus = {
+                if card_table.is_determined() {
+                    2
+                } else if card_table.probability_is_dead(&view.board) == 1.0 {
+                    2
+                } else {
+                    1
+                }
+            };
+            goodness *= (bonus as f32) * (old_weight / new_weight);
+        }
+        goodness
     }
 
     fn get_hint(&self) -> TurnChoice {
@@ -608,22 +654,34 @@ impl InformationPlayerStrategy {
                 Hinted::Color(hint_card.color)
             }
             2 => {
-                let mut hinted_opt = None;
+                // NOTE: this doesn't do that much better than just hinting
+                // the first thing that doesn't match the hint_card
+                let mut hint_option_set = HashSet::new();
                 for card in hand {
                     if card.color != hint_card.color {
-                        hinted_opt = Some(Hinted::Color(card.color));
-                        break;
+                        hint_option_set.insert(Hinted::Color(card.color));
                     }
                     if card.value != hint_card.value {
-                        hinted_opt = Some(Hinted::Value(card.value));
-                        break;
+                        hint_option_set.insert(Hinted::Value(card.value));
                     }
                 }
-                if let Some(hinted) = hinted_opt {
-                    hinted
+                // using hint goodness barely helps
+                let mut hint_options = hint_option_set.into_iter().map(|hinted| {
+                    (self.hint_goodness(&hinted, &hint_player, view), hinted)
+                }).collect::<Vec<_>>();
+
+                hint_options.sort_by(|h1, h2| {
+                    h2.0.partial_cmp(&h1.0).unwrap_or(Ordering::Equal)
+                });
+
+                if hint_options.len() == 0 {
+                    // NOTE: Technically possible, but never happens
+                    Hinted::Color(hint_card.color)
                 } else {
-                    // TODO: Technically possible, but never happens
-                    panic!("Found nothing to hint!")
+                    if hint_options.len() > 1 {
+                        debug!("Choosing amongst hint options: {:?}", hint_options);
+                    }
+                    hint_options.remove(0).1
                 }
             }
             _ => {
@@ -667,6 +725,14 @@ impl PlayerStrategy for InformationPlayerStrategy {
         // we already stored the view
         let view = &self.last_view;
 
+        for player in view.board.get_players().iter() {
+           let hand_info = self.get_player_public_info(player);
+            debug!("Current state of hand_info for {}:", player);
+            for (i, card_table) in hand_info.iter().enumerate() {
+                debug!("  Card {}: {}", i, card_table);
+            }
+        }
+
         let private_info = self.get_private_info(view);
         // debug!("My info:");
         // for (i, card_table) in private_info.iter().enumerate() {
@@ -698,7 +764,6 @@ impl PlayerStrategy for InformationPlayerStrategy {
             view.board.total_cards
             - (COLORS.len() * VALUES.len()) as u32
             - (view.board.num_players * view.board.hand_size);
-
 
         // make a possibly risky play
         if view.board.lives_remaining > 1 &&

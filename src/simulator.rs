@@ -73,6 +73,7 @@ pub fn simulate_once(
     debug!("");
     debug!("=======================================================");
     debug!("Final state:\n{}", game);
+    debug!("SCORE: {:?}", game.score());
     game
 }
 
@@ -120,7 +121,7 @@ impl fmt::Display for Histogram {
         keys.sort();
         for val in keys {
             try!(f.write_str(&format!(
-                "{}: {}\n", val, self.get_count(val),
+                "\n{}: {}", val, self.get_count(val),
             )));
         }
         Ok(())
@@ -133,6 +134,7 @@ pub fn simulate<T: ?Sized>(
         first_seed_opt: Option<u32>,
         n_trials: u32,
         n_threads: u32,
+        progress_info: Option<u32>,
     ) where T: GameStrategyConfig + Sync {
 
     let first_seed = first_seed_opt.unwrap_or(rand::thread_rng().next_u32());
@@ -144,28 +146,33 @@ pub fn simulate<T: ?Sized>(
             let start = first_seed + ((n_trials * i) / n_threads);
             let end = first_seed + ((n_trials * (i+1)) / n_threads);
             join_handles.push(scope.spawn(move || {
-                info!("Thread {} spawned: seeds {} to {}", i, start, end);
+                if progress_info.is_some() {
+                    info!("Thread {} spawned: seeds {} to {}", i, start, end);
+                }
                 let mut non_perfect_seeds = Vec::new();
 
                 let mut score_histogram = Histogram::new();
                 let mut lives_histogram = Histogram::new();
 
                 for seed in start..end {
-                    if (seed > start) && ((seed-start) % 1000 == 0) {
-                        info!(
-                            "Thread {}, Trials: {}, Stats so far: {} score, {} lives, {}% win",
-                            i, seed-start, score_histogram.average(), lives_histogram.average(),
-                            score_histogram.percentage_with(&PERFECT_SCORE) * 100.0
-                        );
+                    if let Some(progress_info_frequency) = progress_info {
+                        if (seed > start) && ((seed-start) % progress_info_frequency == 0) {
+                            info!(
+                                "Thread {}, Trials: {}, Stats so far: {} score, {} lives, {}% win",
+                                i, seed-start, score_histogram.average(), lives_histogram.average(),
+                                score_histogram.percentage_with(&PERFECT_SCORE) * 100.0
+                            );
+                        }
                     }
                     let game = simulate_once(&opts, strat_config_ref.initialize(&opts), Some(seed));
                     let score = game.score();
-                    debug!("SCORED: {:?}", score);
                     lives_histogram.insert(game.board.lives_remaining);
                     score_histogram.insert(score);
                     if score != PERFECT_SCORE { non_perfect_seeds.push((score, seed)); }
                 }
-                info!("Thread {} done", i);
+                if progress_info.is_some() {
+                    info!("Thread {} done", i);
+                }
                 (non_perfect_seeds, score_histogram, lives_histogram)
             }));
         }

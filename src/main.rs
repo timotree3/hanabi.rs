@@ -33,7 +33,6 @@ impl log::Log for SimpleLogger {
 
 fn print_usage(program: &str, opts: Options) {
     print!("{}", opts.usage(&format!("Usage: {} [options]", program)));
-    // for p in $(seq 5 2); do time cargo run -- -n 1000 -s 0 -t 2 -p $p -g info; done
 }
 
 

@@ -33,7 +33,7 @@ pub fn simulate_once(
         opts: &GameOptions,
         game_strategy: Box<GameStrategy>,
         seed_opt: Option<u32>,
-    ) -> Score {
+    ) -> GameState {
 
     let seed = seed_opt.unwrap_or(rand::thread_rng().next_u32());
 
@@ -73,11 +73,10 @@ pub fn simulate_once(
     debug!("");
     debug!("=======================================================");
     debug!("Final state:\n{}", game);
-    let score = game.score();
-    debug!("SCORED: {:?}", score);
-    score
+    game
 }
 
+#[derive(Debug)]
 struct Histogram {
     pub hist: HashMap<Score, u32>,
     pub sum: Score,
@@ -102,6 +101,9 @@ impl Histogram {
     }
     pub fn get_count(&self, val: &Score) -> u32 {
         *self.hist.get(&val).unwrap_or(&0)
+    }
+    pub fn percentage_with(&self, val: &Score) -> f32 {
+        self.get_count(val) as f32 / self.total_count as f32
     }
     pub fn average(&self) -> f32 {
         (self.sum as f32) / (self.total_count as f32)
@@ -131,7 +133,7 @@ pub fn simulate<T: ?Sized>(
         first_seed_opt: Option<u32>,
         n_trials: u32,
         n_threads: u32,
-    ) -> f32 where T: GameStrategyConfig + Sync {
+    ) where T: GameStrategyConfig + Sync {
 
     let first_seed = first_seed_opt.unwrap_or(rand::thread_rng().next_u32());
 
@@ -145,33 +147,40 @@ pub fn simulate<T: ?Sized>(
                 info!("Thread {} spawned: seeds {} to {}", i, start, end);
                 let mut non_perfect_seeds = Vec::new();
 
-                let mut histogram = Histogram::new();
+                let mut score_histogram = Histogram::new();
+                let mut lives_histogram = Histogram::new();
 
                 for seed in start..end {
                     if (seed > start) && ((seed-start) % 1000 == 0) {
                         info!(
-                            "Thread {}, Trials: {}, Average so far: {}",
-                            i, seed-start, histogram.average()
+                            "Thread {}, Trials: {}, Stats so far: {} score, {} lives, {}% win",
+                            i, seed-start, score_histogram.average(), lives_histogram.average(),
+                            score_histogram.percentage_with(&PERFECT_SCORE) * 100.0
                         );
                     }
-                    let score = simulate_once(&opts, strat_config_ref.initialize(&opts), Some(seed));
-                    histogram.insert(score);
-                    if score != 25 { non_perfect_seeds.push((score, seed)); }
+                    let game = simulate_once(&opts, strat_config_ref.initialize(&opts), Some(seed));
+                    let score = game.score();
+                    debug!("SCORED: {:?}", score);
+                    lives_histogram.insert(game.board.lives_remaining);
+                    score_histogram.insert(score);
+                    if score != PERFECT_SCORE { non_perfect_seeds.push((score, seed)); }
                 }
                 info!("Thread {} done", i);
-                (non_perfect_seeds, histogram)
+                (non_perfect_seeds, score_histogram, lives_histogram)
             }));
         }
 
         let mut non_perfect_seeds : Vec<(Score,u32)> = Vec::new();
-        let mut histogram = Histogram::new();
+        let mut score_histogram = Histogram::new();
+        let mut lives_histogram = Histogram::new();
         for join_handle in join_handles {
-            let (thread_non_perfect_seeds, thread_histogram) = join_handle.join();
+            let (thread_non_perfect_seeds, thread_score_histogram, thread_lives_histogram) = join_handle.join();
             non_perfect_seeds.extend(thread_non_perfect_seeds.iter());
-            histogram.merge(thread_histogram);
+            score_histogram.merge(thread_score_histogram);
+            lives_histogram.merge(thread_lives_histogram);
         }
 
-        info!("Score histogram:\n{}", histogram);
+        info!("Score histogram:\n{}", score_histogram);
 
         non_perfect_seeds.sort();
         // info!("Seeds with non-perfect score: {:?}", non_perfect_seeds);
@@ -180,10 +189,8 @@ pub fn simulate<T: ?Sized>(
                   non_perfect_seeds.get(0).unwrap().1);
         }
 
-        let percentage = (n_trials - non_perfect_seeds.len() as u32) as f32 / n_trials as f32;
-        info!("Percentage perfect: {:?}%", percentage * 100.0);
-        let average = histogram.average();
-        info!("Average score: {:?}", average);
-        average
+        info!("Percentage perfect: {:?}%", score_histogram.percentage_with(&PERFECT_SCORE) * 100.0);
+        info!("Average score: {:?}", score_histogram.average());
+        info!("Average lives: {:?}", lives_histogram.average());
     })
 }

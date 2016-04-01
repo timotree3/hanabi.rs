@@ -54,16 +54,24 @@ cargo run -- -n 10000 -s 0 -t 2 -p 5 -g cheat
 Or, if the simulation is slow (as the info strategy is),
 
 ```
-cargo build --release
-time ./target/release/rust_hanabi -n 10000 -s 0 -t 2 -p 5 -g info
+cargo run --release -- -n 10000 -s 0 -t 2 -p 5 -g info
 ```
 
 ## Results
 
 Currently, on seeds 0-9999, we have:
 
-          |   2p    |   3p    |   4p    |   5p    |
-----------|---------|---------|---------|---------|
-cheating  | 24.8600 | 24.9781 | 24.9715 | 24.9583 |
-info      | 18.5959 | 23.8846 | 24.7753 | 24.8719 |
+            |   2p    |   3p    |   4p    |   5p    |
+------------|---------|---------|---------|---------|
+cheating    | 24.8600 | 24.9781 | 24.9715 | 24.9583 |
+information | 18.5726 | 23.8806 | 24.7722 | 24.8756 |
 
+To reproduce:
+```
+n=1000000
+for strategy in info cheat; do
+  for p in $(seq 2 5); do
+    time cargo run --release -- -n $n -s 0 -t 4 -p $p -g $strategy;
+  done
+done
+```

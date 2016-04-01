@@ -134,19 +134,6 @@ impl CheatingPlayerStrategy {
         }
         return None
     }
-
-    fn someone_else_can_play(&self, view: &BorrowedGameView) -> bool {
-        for player in view.board.get_players() {
-            if player != self.me {
-                for card in view.get_hand(&player) {
-                    if view.board.is_playable(card) {
-                        return true;
-                    }
-                }
-            }
-        }
-        false
-    }
 }
 impl PlayerStrategy for CheatingPlayerStrategy {
     fn decide(&mut self, view: &BorrowedGameView) -> TurnChoice {
@@ -197,7 +184,7 @@ impl PlayerStrategy for CheatingPlayerStrategy {
         // hinting is better than discarding dead cards
         // (probably because it stalls the deck-drawing).
         if view.board.hints_remaining > 0 {
-            if self.someone_else_can_play(view) {
+            if view.someone_else_can_play() {
                 return self.throwaway_hint(view);
             }
         }

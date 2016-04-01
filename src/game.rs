@@ -223,7 +223,7 @@ impl BoardState {
 
     // returns whether a card would place on a firework
     pub fn is_playable(&self, card: &Card) -> bool {
-        Some(card.value) == self.get_firework(card.color).desired_value()
+        Some(card.value) == self.get_firework(card.color).needed_value()
     }
 
     // best possible value we can get for firework of that color,
@@ -233,10 +233,10 @@ impl BoardState {
         if firework.complete() {
             return FINAL_VALUE;
         }
-        let desired = firework.desired_value().unwrap();
+        let needed = firework.needed_value().unwrap();
 
         for &value in VALUES.iter() {
-            if value < desired {
+            if value < needed {
                 // already have these cards
                 continue
             }
@@ -255,8 +255,8 @@ impl BoardState {
         if firework.complete() {
             true
         } else {
-            let desired = firework.desired_value().unwrap();
-            if card.value < desired {
+            let needed = firework.needed_value().unwrap();
+            if card.value < needed {
                 true
             } else {
                 card.value > self.highest_attainable(card.color)
@@ -270,8 +270,8 @@ impl BoardState {
         if firework.complete() {
             true
         } else {
-            let desired = firework.desired_value().unwrap();
-            if card.value < desired {
+            let needed = firework.needed_value().unwrap();
+            if card.value < needed {
                 true
             } else {
                 if card.value > self.highest_attainable(card.color) {
@@ -388,6 +388,19 @@ pub trait GameView {
             }
             if self.has_card(&other_player, card) {
                 return true;
+            }
+        }
+        false
+    }
+
+    fn someone_else_can_play(&self) -> bool {
+        for player in self.get_board().get_players() {
+            if player != self.me() {
+                for card in self.get_hand(&player) {
+                    if self.get_board().is_playable(card) {
+                        return true;
+                    }
+                }
             }
         }
         false

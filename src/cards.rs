@@ -125,6 +125,7 @@ impl fmt::Display for Discard {
 }
 
 pub type Score = u32;
+pub const PERFECT_SCORE: Score = 25;
 
 #[derive(Debug,Clone)]
 pub struct Firework {
@@ -139,7 +140,7 @@ impl Firework {
         }
     }
 
-    pub fn desired_value(&self) -> Option<Value> {
+    pub fn needed_value(&self) -> Option<Value> {
         if self.complete() { None } else { Some(self.top + 1) }
     }
 
@@ -157,7 +158,7 @@ impl Firework {
             "Attempted to place card on firework of wrong color!"
         );
         assert!(
-            Some(card.value) == self.desired_value(),
+            Some(card.value) == self.needed_value(),
             "Attempted to place card of wrong value on firework!"
         );
         self.top = card.value;

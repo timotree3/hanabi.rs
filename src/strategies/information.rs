@@ -766,6 +766,7 @@ impl PlayerStrategy for InformationPlayerStrategy {
             - (view.board.num_players * view.board.hand_size);
 
         // make a possibly risky play
+        // TODO: consider removing this, if we improve information transfer
         if view.board.lives_remaining > 1 &&
            view.board.discard_size() <= discard_threshold
         {
@@ -800,6 +801,8 @@ impl PlayerStrategy for InformationPlayerStrategy {
                 let info = self.get_hint_sum_info(public_useless_indices.len() as u32, view);
                 return TurnChoice::Discard(public_useless_indices[info.value as usize]);
             } else if useless_indices.len() > 0 {
+                // TODO: have opponents infer that i knew a card was useless
+                // TODO: after that, potentially prefer useless indices that arent public
                 return TurnChoice::Discard(useless_indices[0]);
             }
         }

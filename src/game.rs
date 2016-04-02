@@ -1,8 +1,8 @@
-use rand::{self, Rng, SeedableRng};
 use std::collections::HashMap;
 use std::fmt;
 use std::iter;
 use std::slice::IterMut;
+use std::ops::Range;
 
 pub use info::*;
 pub use cards::*;
@@ -134,24 +134,6 @@ impl PlayerState {
     }
 }
 
-fn new_deck(seed: u32) -> Cards {
-    let mut deck: Cards = Cards::new();
-
-    for &color in COLORS.iter() {
-        for &value in VALUES.iter() {
-            let count = get_count_for_value(value);
-            for _ in 0..count {
-                deck.push(Card::new(color, value));
-            }
-        }
-    };
-
-    rand::ChaChaRng::from_seed(&[seed]).shuffle(&mut deck[..]);
-
-    trace!("Created deck: {:?}", deck);
-    deck
-}
-
 // State of everything except the player's hands
 // Is all completely common knowledge
 #[derive(Debug,Clone)]
@@ -179,12 +161,11 @@ pub struct BoardState {
     pub deckless_turns_remaining: u32,
 }
 impl BoardState {
-    pub fn new(opts: &GameOptions, seed: u32) -> BoardState {
-        let mut fireworks : HashMap<Color, Firework> = HashMap::new();
-        for &color in COLORS.iter() {
-            fireworks.insert(color, Firework::new(color));
-        }
-        let deck = new_deck(seed);
+    pub fn new(opts: &GameOptions, deck: Cards) -> BoardState {
+        let fireworks = COLORS.iter().map(|&color| {
+            (color, Firework::new(color))
+        }).collect::<HashMap<_, _>>();
+
         let total_cards = deck.len() as u32;
 
         BoardState {
@@ -283,16 +264,12 @@ impl BoardState {
         }
     }
 
-    pub fn get_players(&self) -> Vec<Player> {
-        (0..self.num_players).collect::<Vec<_>>()
+    pub fn get_players(&self) -> Range<Player> {
+        (0..self.num_players)
     }
 
     pub fn score(&self) -> Score {
-        let mut score = 0;
-        for (_, firework) in &self.fireworks {
-            score += firework.score();
-        }
-        score as u32
+        self.fireworks.iter().map(|(_, firework)| firework.score()).fold(0, |a, b| a + b)
     }
 
     pub fn deck_size(&self) -> u32 {
@@ -373,37 +350,27 @@ pub trait GameView {
     }
 
     fn has_card(&self, player: &Player, card: &Card) -> bool {
-        for other_card in self.get_hand(player) {
-            if *card == *other_card {
-                return true;
-            }
-        }
-        false
+        self.get_hand(player).iter().position(|other_card| {
+            card == other_card
+        }).is_some()
     }
 
     fn can_see(&self, card: &Card) -> bool {
-        for other_player in self.get_board().get_players() {
-            if self.me() == other_player {
-                continue
-            }
-            if self.has_card(&other_player, card) {
-                return true;
-            }
-        }
-        false
+        self.get_board().get_players().filter(|&player| {
+            player != self.me()
+        }).any(|player| {
+            self.has_card(&player, card)
+        })
     }
 
     fn someone_else_can_play(&self) -> bool {
-        for player in self.get_board().get_players() {
-            if player != self.me() {
-                for card in self.get_hand(&player) {
-                    if self.get_board().is_playable(card) {
-                        return true;
-                    }
-                }
-            }
-        }
-        false
+        self.get_board().get_players().filter(|&player| {
+            player != self.me()
+        }).any(|player| {
+            self.get_hand(&player).iter().any(|card| {
+                self.get_board().is_playable(card)
+            })
+        })
     }
 }
 
@@ -449,14 +416,13 @@ pub struct OwnedGameView {
 }
 impl OwnedGameView {
     pub fn clone_from(borrowed_view: &BorrowedGameView) -> OwnedGameView {
-        let mut info : Vec<SimpleCardInfo> = Vec::new();
-        for card_info in borrowed_view.info.iter() {
-            info.push((*card_info).clone());
-        }
-        let mut other_player_states : HashMap<Player, PlayerState> = HashMap::new();
-        for (other_player, player_state) in &borrowed_view.other_player_states {
-            other_player_states.insert(*other_player, (*player_state).clone());
-        }
+        let info = borrowed_view.info.iter()
+            .map(|card_info| card_info.clone()).collect::<Vec<_>>();
+
+        let other_player_states = borrowed_view.other_player_states.iter()
+            .map(|(&other_player, &player_state)| {
+                (other_player, player_state.clone())
+            }).collect::<HashMap<_, _>>();
 
         OwnedGameView {
             player: borrowed_view.player.clone(),
@@ -508,19 +474,17 @@ impl fmt::Display for GameState {
 }
 
 impl GameState {
-    pub fn new(opts: &GameOptions, seed: u32) -> GameState {
-        let mut board = BoardState::new(opts, seed);
+    pub fn new(opts: &GameOptions, deck: Cards) -> GameState {
+        let mut board = BoardState::new(opts, deck);
 
-        let mut player_states : HashMap<Player, PlayerState> = HashMap::new();
-        for i in 0..opts.num_players {
-            let hand = (0..opts.hand_size).map(|_| {
+        let player_states =
+            (0..opts.num_players).map(|player| {
+                let hand = (0..opts.hand_size).map(|_| {
                     // we can assume the deck is big enough to draw initial hands
                     board.deck.pop().unwrap()
                 }).collect::<Vec<_>>();
-            player_states.insert(
-                i,  PlayerState::new(hand),
-            );
-        }
+                (player,  PlayerState::new(hand))
+            }).collect::<HashMap<_, _>>();
 
         GameState {
             player_states: player_states,
@@ -528,7 +492,7 @@ impl GameState {
         }
     }
 
-    pub fn get_players(&self) -> Vec<Player> {
+    pub fn get_players(&self) -> Range<Player> {
         self.board.get_players()
     }
 
@@ -543,9 +507,9 @@ impl GameState {
     // get the game state view of a particular player
     pub fn get_view(&self, player: Player) -> BorrowedGameView {
         let mut other_player_states = HashMap::new();
-        for (other_player, state) in &self.player_states {
-            if player != *other_player {
-                other_player_states.insert(*other_player, state);
+        for (&other_player, state) in &self.player_states {
+            if player != other_player {
+                other_player_states.insert(other_player, state);
             }
         }
         BorrowedGameView {

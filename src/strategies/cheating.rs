@@ -44,9 +44,9 @@ impl CheatingStrategy {
 }
 impl GameStrategy for CheatingStrategy {
     fn initialize(&self, player: Player, view: &BorrowedGameView) -> Box<PlayerStrategy> {
-        for (player, state) in &view.other_player_states {
+        for (&player, state) in &view.other_player_states {
             self.player_states_cheat.borrow_mut().insert(
-                *player, state.hand.clone()
+                player, state.hand.clone()
             );
         }
         Box::new(CheatingPlayerStrategy {
@@ -141,28 +141,23 @@ impl PlayerStrategy for CheatingPlayerStrategy {
 
         let states = self.player_states_cheat.borrow();
         let my_cards = states.get(&self.me).unwrap();
-        let playable_cards = my_cards.iter().filter(|card| {
+        let playable_cards = my_cards.iter().enumerate().filter(|&(_, card)| {
             view.board.is_playable(card)
         }).collect::<Vec<_>>();
 
         if playable_cards.len() > 0 {
             // play the best playable card
             // the higher the play_score, the better to play
-            let mut play_card = None;
+            let mut index = 0;
             let mut play_score = -1;
 
-            for card in playable_cards {
+            for &(i, card) in playable_cards.iter() {
                 let score = self.get_play_score(view, card);
                 if score > play_score {
-                    play_card = Some(card);
+                    index = i;
                     play_score = score;
                 }
             }
-
-            let index = my_cards.iter().position(|card| {
-                card == play_card.unwrap()
-            }).unwrap();
-
             return TurnChoice::Play(index)
         }
 

@@ -220,11 +220,12 @@ impl InformationStrategy {
 }
 impl GameStrategy for InformationStrategy {
     fn initialize(&self, player: Player, view: &BorrowedGameView) -> Box<PlayerStrategy> {
-        let mut public_info = HashMap::new();
-        for player in view.board.get_players() {
-            let hand_info = (0..view.board.hand_size).map(|_| { CardPossibilityTable::new() }).collect::<Vec<_>>();
-            public_info.insert(player, hand_info);
-        }
+        let public_info =
+            view.board.get_players().map(|player| {
+                let hand_info = (0..view.board.hand_size).map(|_| { CardPossibilityTable::new() }).collect::<Vec<_>>();
+                (player, hand_info)
+            }).collect::<HashMap<_,_>>();
+
         Box::new(InformationPlayerStrategy {
             me: player,
             public_info: public_info,
@@ -316,12 +317,14 @@ impl InformationPlayerStrategy {
     fn answer_questions(
         questions: &Vec<Box<Question>>, hand: &Cards, view: &OwnedGameView
     ) -> ModulusInformation {
-        let mut info = ModulusInformation::none();
-        for question in questions {
-            let answer_info = question.answer_info(hand, view);
-            info.combine(answer_info);
-        }
-        info
+        questions.iter()
+            .fold(
+                ModulusInformation::none(),
+                |mut answer_info, question| {
+                  let new_answer_info = question.answer_info(hand, view);
+                  answer_info.combine(new_answer_info);
+                  answer_info
+                })
     }
 
     fn get_hint_info_for_player(
@@ -338,19 +341,18 @@ impl InformationPlayerStrategy {
     }
 
     fn get_hint_sum_info(&self, total_info: u32, view: &OwnedGameView) -> ModulusInformation {
-        let mut sum = ModulusInformation::new(total_info, 0);
-        for player in view.get_board().get_players() {
-            if player != self.me {
+        view.get_board().get_players().filter(|&player| {
+            player != self.me
+        }).fold(
+            ModulusInformation::new(total_info, 0),
+            |mut sum_info, player| {
                 let answer = self.get_hint_info_for_player(&player, total_info, view);
-                sum.add(&answer);
-            }
-        }
-        trace!("Summed answer {:?}\n", sum);
-        sum
+                sum_info.add(&answer);
+                sum_info
+        })
     }
 
-    fn infer_own_from_hint_sum(&mut self, hint: ModulusInformation) {
-        let mut hint = hint;
+    fn infer_own_from_hint_sum(&mut self, mut hint: ModulusInformation) {
         let questions = {
             let view = &self.last_view;
             let hand_info = self.get_my_public_info();
@@ -375,14 +377,13 @@ impl InformationPlayerStrategy {
         self.return_public_info(&me, hand_info);
     }
 
-    fn update_from_hint_sum(&mut self, hint: ModulusInformation) {
+    fn update_from_hint_sum(&mut self, mut hint: ModulusInformation) {
         let hinter = self.last_view.board.player;
         let players = {
             let view = &self.last_view;
             view.board.get_players()
         };
         trace!("{}: inferring for myself, starting with {:?}", self.me, hint);
-        let mut hint = hint;
         for player in players {
             if (player != hinter) && (player != self.me) {
                 {
@@ -725,8 +726,8 @@ impl PlayerStrategy for InformationPlayerStrategy {
         // we already stored the view
         let view = &self.last_view;
 
-        for player in view.board.get_players().iter() {
-           let hand_info = self.get_player_public_info(player);
+        for player in view.board.get_players() {
+           let hand_info = self.get_player_public_info(&player);
             debug!("Current state of hand_info for {}:", player);
             for (i, card_table) in hand_info.iter().enumerate() {
                 debug!("  Card {}: {}", i, card_table);

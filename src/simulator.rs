@@ -1,4 +1,4 @@
-use rand::{self, Rng};
+use rand::{self, Rng, SeedableRng};
 use std::collections::HashMap;
 use std::fmt;
 use crossbeam;
@@ -29,6 +29,24 @@ pub trait GameStrategyConfig {
     fn initialize(&self, &GameOptions) -> Box<GameStrategy>;
 }
 
+fn new_deck(seed: u32) -> Cards {
+    let mut deck: Cards = Cards::new();
+
+    for &color in COLORS.iter() {
+        for &value in VALUES.iter() {
+            let count = get_count_for_value(value);
+            for _ in 0..count {
+                deck.push(Card::new(color, value));
+            }
+        }
+    };
+
+    rand::ChaChaRng::from_seed(&[seed]).shuffle(&mut deck[..]);
+
+    trace!("Created deck: {:?}", deck);
+    deck
+}
+
 pub fn simulate_once(
         opts: &GameOptions,
         game_strategy: Box<GameStrategy>,
@@ -36,16 +54,13 @@ pub fn simulate_once(
     ) -> GameState {
 
     let seed = seed_opt.unwrap_or(rand::thread_rng().next_u32());
+    let deck = new_deck(seed);
 
-    let mut game = GameState::new(opts, seed);
+    let mut game = GameState::new(opts, deck);
 
-    let mut strategies : HashMap<Player, Box<PlayerStrategy>> = HashMap::new();
-    for player in game.get_players() {
-        strategies.insert(
-            player,
-            game_strategy.initialize(player.clone(), &game.get_view(player)),
-        );
-    }
+    let mut strategies = game.get_players().map(|player| {
+        (player, game_strategy.initialize(player.clone(), &game.get_view(player)))
+    }).collect::<HashMap<Player, Box<PlayerStrategy>>>();
 
     while !game.is_over() {
         let player = game.board.player;
@@ -110,8 +125,8 @@ impl Histogram {
         (self.sum as f32) / (self.total_count as f32)
     }
     pub fn merge(&mut self, other: Histogram) {
-        for (val, count) in other.hist.iter() {
-            self.insert_many(*val, *count);
+        for (val, count) in other.hist.into_iter() {
+            self.insert_many(val, count);
         }
     }
 }

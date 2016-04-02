@@ -142,11 +142,8 @@ pub trait Info<T> where T: Hash + Eq + Clone + Copy {
     }
 
     fn initialize() -> HashSet<T> {
-        let mut possible_map : HashSet<T> = HashSet::new();
-        for value in Self::get_all_possibilities().iter() {
-            possible_map.insert(value.clone());
-        }
-        possible_map
+        Self::get_all_possibilities().iter()
+            .map(|val| val.clone()).collect::<HashSet<_>>()
     }
 
     fn mark_true(&mut self, value: T) {
@@ -160,11 +157,7 @@ pub trait Info<T> where T: Hash + Eq + Clone + Copy {
     }
 
     fn mark(&mut self, value: T, info: bool) {
-        if info {
-            self.mark_true(value);
-        } else {
-            self.mark_false(value);
-        }
+        if info { self.mark_true(value); } else { self.mark_false(value); }
     }
 }
 

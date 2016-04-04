@@ -3,6 +3,7 @@ use std::cmp::Ordering;
 
 use simulator::*;
 use game::*;
+use helpers::*;
 
 // TODO: use random extra information - i.e. when casting up and down,
 // we sometimes have 2 choices of value to choose
@@ -73,7 +74,7 @@ trait Question {
     fn answer(&self, &Cards, &OwnedGameView) -> u32;
     // process the answer to this question, updating card info
     fn acknowledge_answer(
-        &self, value: u32, &mut Vec<CardPossibilityTable>, &OwnedGameView
+        &self, value: u32, &mut HandInfo<CardPossibilityTable>, &OwnedGameView
     );
 
     fn answer_info(&self, hand: &Cards, view: &OwnedGameView) -> ModulusInformation {
@@ -86,7 +87,7 @@ trait Question {
     fn acknowledge_answer_info(
         &self,
         answer: ModulusInformation,
-        hand_info: &mut Vec<CardPossibilityTable>,
+        hand_info: &mut HandInfo<CardPossibilityTable>,
         view: &OwnedGameView
     ) {
         assert!(self.info_amount() == answer.modulus);
@@ -105,7 +106,7 @@ impl Question for IsPlayable {
     fn acknowledge_answer(
         &self,
         answer: u32,
-        hand_info: &mut Vec<CardPossibilityTable>,
+        hand_info: &mut HandInfo<CardPossibilityTable>,
         view: &OwnedGameView,
     ) {
         let ref mut card_table = hand_info[self.index];
@@ -187,7 +188,7 @@ impl Question for CardPossibilityPartition {
     fn acknowledge_answer(
         &self,
         answer: u32,
-        hand_info: &mut Vec<CardPossibilityTable>,
+        hand_info: &mut HandInfo<CardPossibilityTable>,
         _: &OwnedGameView,
     ) {
         let ref mut card_table = hand_info[self.index];
@@ -200,7 +201,6 @@ impl Question for CardPossibilityPartition {
     }
 }
 
-#[allow(dead_code)]
 pub struct InformationStrategyConfig;
 
 impl InformationStrategyConfig {
@@ -225,7 +225,7 @@ impl GameStrategy for InformationStrategy {
     fn initialize(&self, player: Player, view: &BorrowedGameView) -> Box<PlayerStrategy> {
         let public_info =
             view.board.get_players().map(|player| {
-                let hand_info = (0..view.board.hand_size).map(|_| { CardPossibilityTable::new() }).collect::<Vec<_>>();
+                let hand_info = HandInfo::new(view.board.hand_size);
                 (player, hand_info)
             }).collect::<HashMap<_,_>>();
 
@@ -240,16 +240,17 @@ impl GameStrategy for InformationStrategy {
 
 pub struct InformationPlayerStrategy {
     me: Player,
-    public_info: HashMap<Player, Vec<CardPossibilityTable>>,
+    public_info: HashMap<Player, HandInfo<CardPossibilityTable>>,
     public_counts: CardCounts, // what any newly drawn card should be
     last_view: OwnedGameView, // the view on the previous turn
 }
+
 impl InformationPlayerStrategy {
 
     fn get_questions(
         total_info: u32,
         view: &OwnedGameView,
-        hand_info: &Vec<CardPossibilityTable>,
+        hand_info: &HandInfo<CardPossibilityTable>,
     ) -> Vec<Box<Question>> {
         let mut questions = Vec::new();
         let mut info_remaining = total_info;
@@ -443,7 +444,7 @@ impl InformationPlayerStrategy {
 
     fn get_play_score(&self, view: &OwnedGameView, card: &Card) -> f32 {
         let mut num_with = 1;
-        if view.board.deck_size() > 0 {
+        if view.board.deck_size > 0 {
             for player in view.board.get_players() {
                 if player != self.me {
                     if view.has_card(&player, card) {
@@ -455,7 +456,7 @@ impl InformationPlayerStrategy {
         (10.0 - card.value as f32) / (num_with as f32)
     }
 
-    fn find_useless_cards(&self, view: &OwnedGameView, hand: &Vec<CardPossibilityTable>) -> Vec<usize> {
+    fn find_useless_cards(&self, view: &OwnedGameView, hand: &HandInfo<CardPossibilityTable>) -> Vec<usize> {
         let mut useless: HashSet<usize> = HashSet::new();
         let mut seen: HashMap<Card, usize> = HashMap::new();
 
@@ -479,47 +480,34 @@ impl InformationPlayerStrategy {
         return useless_vec;
     }
 
-    fn take_public_info(&mut self, player: &Player) -> Vec<CardPossibilityTable> {
+    fn take_public_info(&mut self, player: &Player) -> HandInfo<CardPossibilityTable> {
         self.public_info.remove(player).unwrap()
     }
 
-    fn return_public_info(&mut self, player: &Player, card_info: Vec<CardPossibilityTable>) {
+    fn return_public_info(&mut self, player: &Player, card_info: HandInfo<CardPossibilityTable>) {
         self.public_info.insert(*player, card_info);
     }
 
-    fn get_my_public_info(&self) -> &Vec<CardPossibilityTable> {
+    fn get_my_public_info(&self) -> &HandInfo<CardPossibilityTable> {
         self.get_player_public_info(&self.me)
     }
 
-    // fn get_my_public_info_mut(&mut self) -> &mut Vec<CardPossibilityTable> {
+    // fn get_my_public_info_mut(&mut self) -> &mut HandInfo<CardPossibilityTable> {
     //     let me = self.me.clone();
     //     self.get_player_public_info_mut(&me)
     // }
 
-    fn get_player_public_info(&self, player: &Player) -> &Vec<CardPossibilityTable> {
+    fn get_player_public_info(&self, player: &Player) -> &HandInfo<CardPossibilityTable> {
         self.public_info.get(player).unwrap()
     }
 
-    fn get_player_public_info_mut(&mut self, player: &Player) -> &mut Vec<CardPossibilityTable> {
+    fn get_player_public_info_mut(&mut self, player: &Player) -> &mut HandInfo<CardPossibilityTable> {
         self.public_info.get_mut(player).unwrap()
     }
 
     fn update_public_info_for_hint(&mut self, hint: &Hint, matches: &Vec<bool>) {
         let mut info = self.get_player_public_info_mut(&hint.player);
-        let zip_iter = info.iter_mut().zip(matches);
-        match hint.hinted {
-            Hinted::Color(color) => {
-                for (card_info, matched) in zip_iter {
-                    card_info.mark_color(color, *matched);
-                }
-            }
-            Hinted::Value(value) => {
-                for (card_info, matched) in zip_iter {
-                    card_info.mark_value(value, *matched);
-                }
-            }
-
-        }
+        info.update_for_hint(&hint.hinted, matches);
     }
 
     fn update_public_info_for_discard_or_play(
@@ -547,7 +535,7 @@ impl InformationPlayerStrategy {
         // in particular, we will decrement the newly drawn card
         for other_player in view.board.get_players() {
             let info = self.get_player_public_info_mut(&other_player);
-            for card_table in info {
+            for card_table in info.iter_mut() {
                 card_table.decrement_weight_if_possible(card);
             }
         }
@@ -555,11 +543,11 @@ impl InformationPlayerStrategy {
         self.public_counts.increment(card);
     }
 
-    fn get_private_info(&self, view: &OwnedGameView) -> Vec<CardPossibilityTable> {
+    fn get_private_info(&self, view: &OwnedGameView) -> HandInfo<CardPossibilityTable> {
         let mut info = self.get_my_public_info().clone();
         for card_table in info.iter_mut() {
-            for (_, state) in &view.other_player_states {
-                for card in &state.hand {
+            for (_, hand) in &view.other_hands {
+                for card in hand {
                     card_table.decrement_weight_if_possible(card);
                 }
             }
@@ -585,7 +573,7 @@ impl InformationPlayerStrategy {
         return score;
     }
 
-    fn get_index_for_hint(&self, info: &Vec<CardPossibilityTable>, view: &OwnedGameView) -> usize {
+    fn get_index_for_hint(&self, info: &HandInfo<CardPossibilityTable>, view: &OwnedGameView) -> usize {
         let mut scores = info.iter().enumerate().map(|(i, card_table)| {
             let score = self.get_hint_index_score(card_table, view);
             (-score, i)
@@ -739,8 +727,8 @@ impl InformationPlayerStrategy {
 
         self.update_from_hint_sum(mod_info);
     }
-
 }
+
 impl PlayerStrategy for InformationPlayerStrategy {
     fn decide(&mut self, _: &BorrowedGameView) -> TurnChoice {
         // we already stored the view

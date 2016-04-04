@@ -4,8 +4,7 @@ extern crate log;
 extern crate rand;
 extern crate crossbeam;
 
-mod cards;
-mod info;
+mod helpers;
 mod game;
 mod simulator;
 mod strategies {

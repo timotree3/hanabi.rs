@@ -1,14 +1,17 @@
 use std::cmp::Eq;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::ops::{Index,IndexMut};
 use std::hash::Hash;
 use std::convert::From;
+use std::slice;
 
-use cards::*;
-use game::BoardState;
+use game::*;
 
 // trait representing information about a card
 pub trait CardInfo {
+    fn new() -> Self;
+
     // whether the card is possible
     fn is_possible(&self, card: &Card) -> bool;
 
@@ -190,15 +193,14 @@ pub struct SimpleCardInfo {
     pub color_info: ColorInfo,
     pub value_info: ValueInfo,
 }
-impl SimpleCardInfo {
-    pub fn new() -> SimpleCardInfo {
+impl CardInfo for SimpleCardInfo {
+    fn new() -> SimpleCardInfo {
         SimpleCardInfo {
             color_info: ColorInfo::new(),
             value_info: ValueInfo::new(),
         }
     }
-}
-impl CardInfo for SimpleCardInfo {
+
     fn get_possibilities(&self) -> Vec<Card> {
         let mut v = Vec::new();
         for &color in self.color_info.get_possibilities().iter() {
@@ -249,10 +251,6 @@ pub struct CardPossibilityTable {
     possible: HashMap<Card, u32>,
 }
 impl CardPossibilityTable {
-    pub fn new() -> CardPossibilityTable {
-        Self::from(&CardCounts::new())
-    }
-
     // mark a possible card as false
     pub fn mark_false(&mut self, card: &Card) {
         self.possible.remove(card);
@@ -327,6 +325,10 @@ impl <'a> From<&'a CardCounts> for CardPossibilityTable {
     }
 }
 impl CardInfo for CardPossibilityTable {
+    fn new() -> CardPossibilityTable {
+        Self::from(&CardCounts::new())
+    }
+
     fn is_possible(&self, card: &Card) -> bool {
         self.possible.contains_key(card)
     }
@@ -356,5 +358,51 @@ impl fmt::Display for CardPossibilityTable {
             try!(f.write_str(&format!("{} {}, ", weight, card)));
         }
         Ok(())
+    }
+}
+
+#[derive(Clone)]
+pub struct HandInfo<T> where T: CardInfo {
+    pub hand_info: Vec<T>
+}
+impl <T> HandInfo<T> where T: CardInfo {
+    pub fn new(hand_size: u32) -> Self {
+        let hand_info = (0..hand_size).map(|_| T::new()).collect::<Vec<_>>();
+        HandInfo {
+            hand_info: hand_info,
+        }
+    }
+
+    // update for hint to me
+    pub fn update_for_hint(&mut self, hinted: &Hinted, matches: &Vec<bool>) {
+        match hinted {
+            &Hinted::Color(color) => {
+                for (card_info, &matched) in self.hand_info.iter_mut().zip(matches.iter()) {
+                    card_info.mark_color(color, matched);
+                }
+            }
+            &Hinted::Value(value) => {
+                for (card_info, &matched) in self.hand_info.iter_mut().zip(matches.iter()) {
+                    card_info.mark_value(value, matched);
+                }
+            }
+        }
+    }
+
+    pub fn remove(&mut self, index: usize) -> T { self.hand_info.remove(index) }
+    pub fn push(&mut self, card_info: T)        { self.hand_info.push(card_info) }
+    pub fn iter_mut(&mut self) -> slice::IterMut<T> { self.hand_info.iter_mut() }
+    pub fn iter(&self) -> slice::Iter<T>        { self.hand_info.iter() }
+    pub fn len(&self) -> usize                  { self.hand_info.len() }
+}
+impl <T> Index<usize> for HandInfo<T> where T: CardInfo {
+    type Output = T;
+    fn index(&self, index: usize) -> &T {
+        &self.hand_info[index]
+    }
+}
+impl <T> IndexMut<usize> for HandInfo<T> where T: CardInfo {
+    fn index_mut(&mut self, index: usize) -> &mut T {
+        &mut self.hand_info[index]
     }
 }

@@ -3,7 +3,6 @@ use game::*;
 use rand::{self, Rng};
 
 // dummy, terrible strategy, as an example
-#[allow(dead_code)]
 #[derive(Clone)]
 pub struct RandomStrategyConfig {
     pub hint_probability: f64,

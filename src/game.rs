@@ -1,13 +1,183 @@
 use std::collections::HashMap;
 use std::fmt;
-use std::iter;
-use std::slice::IterMut;
 use std::ops::Range;
 
-pub use info::*;
-pub use cards::*;
-
 pub type Player = u32;
+
+pub type Color = char;
+pub const NUM_COLORS: usize = 5;
+pub const COLORS: [Color; NUM_COLORS] = ['r', 'y', 'g', 'b', 'w'];
+
+pub type Value = u32;
+// list of values, assumed to be small to large
+pub const NUM_VALUES: usize = 5;
+pub const VALUES : [Value; NUM_VALUES] = [1, 2, 3, 4, 5];
+pub const FINAL_VALUE : Value = 5;
+
+pub fn get_count_for_value(value: Value) -> u32 {
+    match value {
+        1         => 3,
+        2 | 3 | 4 => 2,
+        5         => 1,
+        _ => { panic!(format!("Unexpected value: {}", value)); }
+    }
+}
+
+#[derive(Debug,Clone,PartialEq,Eq,Hash,Ord,PartialOrd)]
+pub struct Card {
+    pub color: Color,
+    pub value: Value,
+}
+impl Card {
+    pub fn new(color: Color, value: Value) -> Card {
+        Card { color: color, value: value }
+    }
+}
+impl fmt::Display for Card {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}{}", self.color, self.value)
+    }
+}
+
+#[derive(Debug,Clone)]
+pub struct CardCounts {
+    counts: HashMap<Card, u32>,
+}
+impl CardCounts {
+    pub fn new() -> CardCounts {
+        let mut counts = HashMap::new();
+        for &color in COLORS.iter() {
+            for &value in VALUES.iter() {
+                counts.insert(Card::new(color, value), 0);
+            }
+        }
+        CardCounts {
+            counts: counts,
+        }
+    }
+
+    pub fn get_count(&self, card: &Card) -> u32 {
+        *self.counts.get(card).unwrap()
+    }
+
+    pub fn remaining(&self, card: &Card) -> u32 {
+        let count = self.get_count(card);
+        get_count_for_value(card.value) - count
+    }
+
+    pub fn increment(&mut self, card: &Card) {
+        let count = self.counts.get_mut(card).unwrap();
+        *count += 1;
+    }
+}
+impl fmt::Display for CardCounts {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for &color in COLORS.iter() {
+            try!(f.write_str(&format!(
+                "{}: ", color,
+            )));
+            for &value in VALUES.iter() {
+                let count = self.get_count(&Card::new(color, value));
+                let total = get_count_for_value(value);
+                try!(f.write_str(&format!(
+                    "{}/{} {}s", count, total, value
+                )));
+                if value != FINAL_VALUE {
+                    try!(f.write_str(", "));
+                }
+            }
+            try!(f.write_str("\n"));
+        }
+        Ok(())
+    }
+}
+
+pub type Cards = Vec<Card>;
+
+#[derive(Debug,Clone)]
+pub struct Discard {
+    pub cards: Cards,
+    counts: CardCounts,
+}
+impl Discard {
+    pub fn new() -> Discard {
+        Discard {
+            cards: Cards::new(),
+            counts: CardCounts::new(),
+        }
+    }
+
+    pub fn has_all(&self, card: &Card) -> bool {
+        self.counts.remaining(card) == 0
+    }
+
+    pub fn remaining(&self, card: &Card) -> u32 {
+        self.counts.remaining(card)
+    }
+
+    pub fn place(&mut self, card: Card) {
+        self.counts.increment(&card);
+        self.cards.push(card);
+    }
+}
+impl fmt::Display for Discard {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // try!(f.write_str(&format!(
+        //     "{}", self.cards,
+        // )));
+        write!(f, "{}", self.counts)
+    }
+}
+
+pub type Score = u32;
+pub const PERFECT_SCORE: Score = (NUM_COLORS * NUM_VALUES) as u32;
+
+#[derive(Debug,Clone)]
+pub struct Firework {
+    pub color: Color,
+    pub top: Value,
+}
+impl Firework {
+    pub fn new(color: Color) -> Firework {
+        Firework {
+            color: color,
+            top: 0,
+        }
+    }
+
+    pub fn needed_value(&self) -> Option<Value> {
+        if self.complete() { None } else { Some(self.top + 1) }
+    }
+
+    pub fn score(&self) -> Score {
+        self.top
+    }
+
+    pub fn complete(&self) -> bool {
+        self.top == FINAL_VALUE
+    }
+
+    pub fn place(&mut self, card: &Card) {
+        assert!(
+            card.color == self.color,
+            "Attempted to place card on firework of wrong color!"
+        );
+        assert!(
+            Some(card.value) == self.needed_value(),
+            "Attempted to place card of wrong value on firework!"
+        );
+        self.top = card.value;
+    }
+}
+impl fmt::Display for Firework {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.complete() {
+            write!(f, "{} firework complete!", self.color)
+        } else {
+            write!(f, "{} firework at {}", self.color, self.top)
+        }
+    }
+}
 
 #[derive(Debug,Clone,Hash,PartialEq,Eq)]
 pub enum Hinted {
@@ -65,80 +235,11 @@ pub struct GameOptions {
     pub allow_empty_hints: bool,
 }
 
-// The state of a given player:  all other players may see this
-#[derive(Debug,Clone)]
-pub struct PlayerState {
-    // the player's actual hand
-    pub hand: Cards,
-    // represents what is common knowledge about the player's hand
-    pub info: Vec<SimpleCardInfo>,
-}
-impl fmt::Display for PlayerState {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(f.write_str("hand:    "));
-
-        let mut i = 0;
-        for card in &self.hand {
-            let info : &SimpleCardInfo = &self.info[i];
-            try!(f.write_str(&format!("{} =? {: <15} ", card, info)));
-            i += 1;
-        }
-        Ok(())
-    }
-}
-impl PlayerState {
-    pub fn new(hand: Cards) -> PlayerState {
-        let infos = (0..hand.len()).map(|_| {
-            SimpleCardInfo::new()
-        }).collect::<Vec<_>>();
-        PlayerState {
-            hand: hand,
-            info: infos,
-        }
-    }
-
-    pub fn take(&mut self, index: usize) -> (Card, SimpleCardInfo) {
-        let card = self.hand.remove(index);
-        let info = self.info.remove(index);
-        (card, info)
-    }
-
-    pub fn place(&mut self, card: Card) {
-        self.hand.push(card);
-        self.info.push(SimpleCardInfo::new());
-    }
-
-    fn hand_info_iter_mut<'a>(&'a mut self) ->
-        iter::Zip<IterMut<'a, Card>, IterMut<'a, SimpleCardInfo>>
-    {
-        self.hand.iter_mut().zip(self.info.iter_mut())
-    }
-
-    pub fn reveal(&mut self, hinted: &Hinted) -> Vec<bool> {
-        match hinted {
-            &Hinted::Color(color) => {
-                self.hand_info_iter_mut().map(|(card, info)| {
-                    let matches = card.color == color;
-                    info.mark_color(color, matches);
-                    matches
-                }).collect::<Vec<_>>()
-            }
-            &Hinted::Value(value) => {
-                self.hand_info_iter_mut().map(|(card, info)| {
-                    let matches = card.value == value;
-                    info.mark_value(value, matches);
-                    matches
-                }).collect::<Vec<_>>()
-            }
-        }
-    }
-}
-
 // State of everything except the player's hands
 // Is all completely common knowledge
 #[derive(Debug,Clone)]
 pub struct BoardState {
-    deck: Cards,
+    pub deck_size: u32,
     pub total_cards: u32,
     pub discard: Discard,
     pub fireworks: HashMap<Color, Firework>,
@@ -161,16 +262,14 @@ pub struct BoardState {
     pub deckless_turns_remaining: u32,
 }
 impl BoardState {
-    pub fn new(opts: &GameOptions, deck: Cards) -> BoardState {
+    pub fn new(opts: &GameOptions, deck_size: u32) -> BoardState {
         let fireworks = COLORS.iter().map(|&color| {
             (color, Firework::new(color))
         }).collect::<HashMap<_, _>>();
 
-        let total_cards = deck.len() as u32;
-
         BoardState {
-            deck: deck,
-            total_cards: total_cards,
+            deck_size: deck_size,
+            total_cards: deck_size,
             fireworks: fireworks,
             discard: Discard::new(),
             num_players: opts.num_players,
@@ -272,10 +371,6 @@ impl BoardState {
         self.fireworks.iter().map(|(_, firework)| firework.score()).fold(0, |a, b| a + b)
     }
 
-    pub fn deck_size(&self) -> u32 {
-        self.deck.len() as u32
-    }
-
     pub fn discard_size(&self) -> u32 {
         self.discard.cards.len() as u32
     }
@@ -303,11 +398,10 @@ impl fmt::Display for BoardState {
             )));
         }
 
-        let deck_size = self.deck_size();
         try!(f.write_str(&format!(
-            "{} cards remaining in deck\n", deck_size
+            "{} cards remaining in deck\n", self.deck_size
         )));
-        if deck_size == 0 {
+        if self.deck_size == 0 {
             try!(f.write_str(&format!(
                 "Deck is empty.  {} turns remaining in game\n", self.deckless_turns_remaining
             )));
@@ -332,18 +426,14 @@ impl fmt::Display for BoardState {
 // complete game view of a given player
 pub trait GameView {
     fn me(&self) -> Player;
-    fn my_info(&self) -> &Vec<SimpleCardInfo>;
-    fn get_state(&self, player: &Player) -> &PlayerState;
+    fn get_hand(&self, &Player) -> &Cards;
     fn get_board(&self) -> &BoardState;
 
-    fn get_hand(&self, player: &Player) -> &Cards {
-        assert!(self.me() != *player, "Cannot query about your own cards!");
-        &self.get_state(player).hand
-    }
+    fn my_hand_size(&self) -> usize;
 
     fn hand_size(&self, player: &Player) -> usize {
         if self.me() == *player {
-            self.my_info().len()
+            self.my_hand_size()
         } else {
             self.get_hand(player).len()
         }
@@ -379,10 +469,9 @@ pub trait GameView {
 pub struct BorrowedGameView<'a> {
     // the player whose view it is
     pub player: Player,
-    // what is known about their own hand (and thus common knowledge)
-    pub info: &'a Vec<SimpleCardInfo>,
+    pub hand_size: usize,
     // the cards of the other players, as well as the information they have
-    pub other_player_states: HashMap<Player, &'a PlayerState>,
+    pub other_hands: HashMap<Player, &'a Cards>,
     // board state
     pub board: &'a BoardState,
 }
@@ -390,12 +479,12 @@ impl <'a> GameView for BorrowedGameView<'a> {
     fn me(&self) -> Player {
         self.player
     }
-    fn my_info(&self) -> &Vec<SimpleCardInfo> {
-        self.info
+    fn my_hand_size(&self) -> usize {
+        self.hand_size
     }
-    fn get_state(&self, player: &Player) -> &PlayerState {
+    fn get_hand(&self, player: &Player) -> &Cards {
         assert!(self.me() != *player, "Cannot query about your own state!");
-        self.other_player_states.get(player).unwrap()
+        self.other_hands.get(player).unwrap()
     }
     fn get_board(&self) -> &BoardState {
         self.board
@@ -407,27 +496,23 @@ impl <'a> GameView for BorrowedGameView<'a> {
 pub struct OwnedGameView {
     // the player whose view it is
     pub player: Player,
-    // what is known about their own hand (and thus common knowledge)
-    pub info: Vec<SimpleCardInfo>,
+    pub hand_size: usize,
     // the cards of the other players, as well as the information they have
-    pub other_player_states: HashMap<Player, PlayerState>,
+    pub other_hands: HashMap<Player, Cards>,
     // board state
     pub board: BoardState,
 }
 impl OwnedGameView {
     pub fn clone_from(borrowed_view: &BorrowedGameView) -> OwnedGameView {
-        let info = borrowed_view.info.iter()
-            .map(|card_info| card_info.clone()).collect::<Vec<_>>();
-
-        let other_player_states = borrowed_view.other_player_states.iter()
+        let other_hands = borrowed_view.other_hands.iter()
             .map(|(&other_player, &player_state)| {
                 (other_player, player_state.clone())
             }).collect::<HashMap<_, _>>();
 
         OwnedGameView {
             player: borrowed_view.player.clone(),
-            info: info,
-            other_player_states: other_player_states,
+            hand_size: borrowed_view.hand_size,
+            other_hands: other_hands,
             board: (*borrowed_view.board).clone(),
         }
     }
@@ -436,24 +521,24 @@ impl GameView for OwnedGameView {
     fn me(&self) -> Player {
         self.player
     }
-    fn my_info(&self) -> &Vec<SimpleCardInfo> {
-        &self.info
+    fn my_hand_size(&self) -> usize {
+        self.hand_size
     }
-    fn get_state(&self, player: &Player) -> &PlayerState {
+    fn get_hand(&self, player: &Player) -> &Cards {
         assert!(self.me() != *player, "Cannot query about your own state!");
-        self.other_player_states.get(player).unwrap()
+        self.other_hands.get(player).unwrap()
     }
     fn get_board(&self) -> &BoardState {
         &self.board
     }
 }
 
-
 // complete game state (known to nobody!)
 #[derive(Debug)]
 pub struct GameState {
-    pub player_states: HashMap<Player, PlayerState>,
+    pub hands: HashMap<Player, Cards>,
     pub board: BoardState,
+    pub deck: Cards,
 }
 impl fmt::Display for GameState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -462,8 +547,12 @@ impl fmt::Display for GameState {
         try!(f.write_str("Hands:\n"));
         try!(f.write_str("======\n"));
         for player in self.board.get_players() {
-            let state = &self.player_states.get(&player).unwrap();
-            try!(f.write_str(&format!("player {} {}\n", player, state)));
+            let hand = &self.hands.get(&player).unwrap();
+            try!(f.write_str(&format!("player {}:", player)));
+            for card in hand.iter() {
+                try!(f.write_str(&format!("    {}", card)));
+            }
+            try!(f.write_str(&"\n"));
         }
         try!(f.write_str("======\n"));
         try!(f.write_str("Board:\n"));
@@ -474,21 +563,23 @@ impl fmt::Display for GameState {
 }
 
 impl GameState {
-    pub fn new(opts: &GameOptions, deck: Cards) -> GameState {
-        let mut board = BoardState::new(opts, deck);
+    pub fn new(opts: &GameOptions, mut deck: Cards) -> GameState {
+        let mut board = BoardState::new(opts, deck.len() as u32);
 
-        let player_states =
+        let hands =
             (0..opts.num_players).map(|player| {
                 let hand = (0..opts.hand_size).map(|_| {
                     // we can assume the deck is big enough to draw initial hands
-                    board.deck.pop().unwrap()
+                    board.deck_size -= 1;
+                    deck.pop().unwrap()
                 }).collect::<Vec<_>>();
-                (player,  PlayerState::new(hand))
+                (player, hand)
             }).collect::<HashMap<_, _>>();
 
         GameState {
-            player_states: player_states,
+            hands: hands,
             board: board,
+            deck: deck,
         }
     }
 
@@ -506,33 +597,33 @@ impl GameState {
 
     // get the game state view of a particular player
     pub fn get_view(&self, player: Player) -> BorrowedGameView {
-        let mut other_player_states = HashMap::new();
-        for (&other_player, state) in &self.player_states {
+        let mut other_hands = HashMap::new();
+        for (&other_player, hand) in &self.hands {
             if player != other_player {
-                other_player_states.insert(other_player, state);
+                other_hands.insert(other_player, hand);
             }
         }
         BorrowedGameView {
             player: player,
-            info: &self.player_states.get(&player).unwrap().info,
-            other_player_states: other_player_states,
+            hand_size: self.hands.get(&player).unwrap().len(),
+            other_hands: other_hands,
             board: &self.board,
         }
     }
 
     // takes a card from the player's hand, and replaces it if possible
     fn take_from_hand(&mut self, index: usize) -> Card {
-        let ref mut state = self.player_states.get_mut(&self.board.player).unwrap();
-        let (card, _) = state.take(index);
-        card
+        let ref mut hand = self.hands.get_mut(&self.board.player).unwrap();
+        hand.remove(index)
     }
 
     fn replenish_hand(&mut self) {
-        let ref mut state = self.player_states.get_mut(&self.board.player).unwrap();
-        if (state.hand.len() as u32) < self.board.hand_size {
-            if let Some(new_card) = self.board.deck.pop() {
+        let ref mut hand = self.hands.get_mut(&self.board.player).unwrap();
+        if (hand.len() as u32) < self.board.hand_size {
+            if let Some(new_card) = self.deck.pop() {
+                self.board.deck_size -= 1;
                 debug!("Drew new card, {}", new_card);
-                state.place(new_card);
+                hand.push(new_card);
             }
         }
     }
@@ -549,11 +640,19 @@ impl GameState {
                     assert!(self.board.player != hint.player,
                             format!("Player {} gave a hint to himself", hint.player));
 
-                    let ref mut state = self.player_states.get_mut(&hint.player).unwrap();
-                    let results = state.reveal(&hint.hinted);
+                    let hand = self.hands.get(&hint.player).unwrap();
+                    let results = match hint.hinted {
+                        Hinted::Color(color) => {
+                            hand.iter().map(|card| { card.color == color }).collect::<Vec<_>>()
+                        }
+                        Hinted::Value(value) => {
+                            hand.iter().map(|card| { card.value == value }).collect::<Vec<_>>()
+                        }
+                    };
                     if (!self.board.allow_empty_hints) && (results.iter().all(|matched| !matched)) {
                         panic!("Tried hinting an empty hint");
                     }
+
                     TurnResult::Hint(results)
                 }
                 TurnChoice::Discard(index) => {
@@ -603,7 +702,7 @@ impl GameState {
 
         self.replenish_hand();
 
-        if self.board.deck.len() == 0 {
+        if self.board.deck_size == 0 {
             self.board.deckless_turns_remaining -= 1;
         }
         self.board.turn += 1;

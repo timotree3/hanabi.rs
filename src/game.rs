@@ -198,7 +198,7 @@ impl fmt::Display for Hinted {
     }
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug,Clone,Hash,PartialEq,Eq)]
 pub struct Hint {
     pub player: Player,
     pub hinted: Hinted,

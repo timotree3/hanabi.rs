@@ -11,6 +11,7 @@ pub trait PlayerStrategy {
     // Given what happened last turn, and the new state.
     fn update(&mut self, &TurnRecord, &BorrowedGameView);
 }
+
 // Represents the overall strategy for a game
 // Shouldn't do much, except store configuration parameters and
 // possibility initialize some shared randomness between players
@@ -23,4 +24,3 @@ pub trait GameStrategy {
 pub trait GameStrategyConfig {
     fn initialize(&self, &GameOptions) -> Box<GameStrategy>;
 }
-

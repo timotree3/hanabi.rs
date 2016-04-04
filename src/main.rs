@@ -11,6 +11,7 @@ mod strategy;
 mod strategies {
     pub mod examples;
     pub mod cheating;
+    pub mod simple;
     pub mod information;
 }
 
@@ -60,7 +61,7 @@ fn main() {
                 "Number of players",
                 "NPLAYERS");
     opts.optopt("g", "strategy",
-                "Which strategy to use.  One of 'random', 'cheat', and 'info'",
+                "Which strategy to use.  One of 'random', 'simple', 'info', and 'cheat'",
                 "STRATEGY");
     opts.optflag("h", "help",
                  "Print this help menu");
@@ -130,12 +131,16 @@ fn main() {
                 play_probability: 0.2,
             }) as Box<strategy::GameStrategyConfig + Sync>
         },
-        "cheat" => {
-            Box::new(strategies::cheating::CheatingStrategyConfig::new())
+        "simple" => {
+            Box::new(strategies::simple::SimpleStrategyConfig::new())
                 as Box<strategy::GameStrategyConfig + Sync>
         },
         "info" => {
             Box::new(strategies::information::InformationStrategyConfig::new())
+                as Box<strategy::GameStrategyConfig + Sync>
+        },
+        "cheat" => {
+            Box::new(strategies::cheating::CheatingStrategyConfig::new())
                 as Box<strategy::GameStrategyConfig + Sync>
         },
         _ => {

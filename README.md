@@ -71,7 +71,7 @@ To reproduce:
 ```
 n=10000   # number of rounds to simulate
 t=4       # number of threads
-for strategy in info cheat; do
+for strategy in simple info cheat; do
   for p in $(seq 2 5); do
     time cargo run --release -- -n $n -s 0 -t $t -p $p -g $strategy;
   done

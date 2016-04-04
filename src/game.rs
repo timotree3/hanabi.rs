@@ -23,7 +23,7 @@ pub fn get_count_for_value(value: Value) -> u32 {
     }
 }
 
-#[derive(Debug,Clone,PartialEq,Eq,Hash,Ord,PartialOrd)]
+#[derive(Clone,PartialEq,Eq,Hash,Ord,PartialOrd)]
 pub struct Card {
     pub color: Color,
     pub value: Value,
@@ -34,6 +34,11 @@ impl Card {
     }
 }
 impl fmt::Display for Card {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}{}", self.color, self.value)
+    }
+}
+impl fmt::Debug for Card {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}{}", self.color, self.value)
     }
@@ -217,11 +222,12 @@ pub enum TurnResult {
 
 // represents a turn taken in the game
 #[derive(Debug,Clone)]
-pub struct Turn {
+pub struct TurnRecord {
     pub player: Player,
     pub choice: TurnChoice,
     pub result: TurnResult,
 }
+pub type TurnHistory = Vec<TurnRecord>;
 
 // represents possible settings for the game
 pub struct GameOptions {
@@ -248,6 +254,7 @@ pub struct BoardState {
 
     // which turn is it?
     pub turn: u32,
+    pub turn_history: TurnHistory,
     // // whose turn is it?
     pub player: Player,
     pub hand_size: u32,
@@ -257,7 +264,6 @@ pub struct BoardState {
     pub allow_empty_hints: bool,
     pub lives_total: u32,
     pub lives_remaining: u32,
-    pub turn_history: Vec<Turn>,
     // only relevant when deck runs out
     pub deckless_turns_remaining: u32,
 }
@@ -628,7 +634,7 @@ impl GameState {
         }
     }
 
-    pub fn process_choice(&mut self, choice: TurnChoice) -> Turn {
+    pub fn process_choice(&mut self, choice: TurnChoice) -> TurnRecord {
         let turn_result = {
             match choice {
                 TurnChoice::Hint(ref hint) => {
@@ -649,8 +655,9 @@ impl GameState {
                             hand.iter().map(|card| { card.value == value }).collect::<Vec<_>>()
                         }
                     };
-                    if (!self.board.allow_empty_hints) && (results.iter().all(|matched| !matched)) {
-                        panic!("Tried hinting an empty hint");
+                    if !self.board.allow_empty_hints {
+                        assert!(results.iter().any(|matched| *matched),
+                                "Tried hinting an empty hint");
                     }
 
                     TurnResult::Hint(results)
@@ -693,12 +700,12 @@ impl GameState {
                 }
             }
         };
-        let turn = Turn {
+        let turn_record = TurnRecord {
             player: self.board.player.clone(),
             result: turn_result,
             choice: choice,
         };
-        self.board.turn_history.push(turn.clone());
+        self.board.turn_history.push(turn_record.clone());
 
         self.replenish_hand();
 
@@ -712,6 +719,6 @@ impl GameState {
         };
         assert_eq!((self.board.turn - 1) % self.board.num_players, self.board.player);
 
-        turn
+        turn_record
     }
 }

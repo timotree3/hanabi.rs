@@ -38,7 +38,7 @@ cargo run -- -s 222 -p 5 -g info -l debug | less
 
 ## Strategies
 
-To write a strategy, you simply [implement a few traits](src/simulator.rs).
+To write a strategy, you simply [implement a few traits](src/strategy.rs).
 
 The framework is designed to take advantage of Rust's ownership system
 so that you *can't cheat*, without using stuff like `Cell` or `Arc` or `Mutex`.

@@ -1,12 +1,14 @@
 use std::collections::{HashMap, HashSet};
 use std::cmp::Ordering;
 
-use simulator::*;
+use strategy::*;
 use game::*;
 use helpers::*;
 
 // TODO: use random extra information - i.e. when casting up and down,
 // we sometimes have 2 choices of value to choose
+// TODO: guess very aggressively at very end of game (first, see whether
+// situation ever occurs)
 
 #[derive(Debug,Clone)]
 struct ModulusInformation {
@@ -39,8 +41,7 @@ impl ModulusInformation {
         self.modulus = self.modulus / modulus;
         let value = self.value / self.modulus;
         self.value = self.value - value * self.modulus;
-        trace!("orig value {}, orig modulus {}, self.value {}, self.modulus {}, value {}, modulus {}",
-               original_value, original_modulus, self.value, self.modulus, value, modulus);
+        assert!(original_modulus == modulus * self.modulus);
         assert!(original_value == value * self.modulus + self.value);
         Self::new(modulus, value)
     }
@@ -303,8 +304,6 @@ impl InformationPlayerStrategy {
                     return questions;
                 }
             }
-        } else {
-            debug!("Something known playable");
         }
 
         let mut ask_partition = augmented_hand_info.iter()
@@ -354,10 +353,8 @@ impl InformationPlayerStrategy {
         assert!(player != &self.me);
         let hand_info = self.get_player_public_info(player);
         let questions = Self::get_questions(total_info, view, hand_info);
-        trace!("Getting hint for player {}, questions {:?}", player, questions.len());
         let mut answer = Self::answer_questions(&questions, view.get_hand(player), view);
         answer.cast_up(total_info);
-        trace!("Resulting answer {:?}", answer);
         answer
     }
 
@@ -379,11 +376,8 @@ impl InformationPlayerStrategy {
             let hand_info = self.get_my_public_info();
             Self::get_questions(hint.modulus, view, hand_info)
         };
-        trace!("{}: Questions {:?}", self.me, questions.len());
         let product = questions.iter().fold(1, |a, ref b| a * b.info_amount());
-        trace!("{}: Product {}, hint: {:?}", self.me, product, hint);
         hint.cast_down(product);
-        trace!("{}: Inferred for myself {:?}", self.me, hint);
 
         let me = self.me.clone();
         let mut hand_info = self.take_public_info(&me);
@@ -404,14 +398,12 @@ impl InformationPlayerStrategy {
             let view = &self.last_view;
             view.board.get_players()
         };
-        trace!("{}: inferring for myself, starting with {:?}", self.me, hint);
         for player in players {
             if (player != hinter) && (player != self.me) {
                 {
                     let view = &self.last_view;
                     let hint_info = self.get_hint_info_for_player(&player, hint.modulus, view);
                     hint.subtract(&hint_info);
-                    trace!("{}: subtracted for {}, now {:?}", self.me, player, hint);
                 }
 
                 // *take* instead of borrowing mutably, because of borrow rules...
@@ -856,20 +848,20 @@ impl PlayerStrategy for InformationPlayerStrategy {
         TurnChoice::Discard(index)
     }
 
-    fn update(&mut self, turn: &Turn, view: &BorrowedGameView) {
-        match turn.choice {
+    fn update(&mut self, turn_record: &TurnRecord, view: &BorrowedGameView) {
+        match turn_record.choice {
             TurnChoice::Hint(ref hint) =>  {
-                if let &TurnResult::Hint(ref matches) = &turn.result {
+                if let &TurnResult::Hint(ref matches) = &turn_record.result {
                     self.infer_from_hint(hint, matches);
                     self.update_public_info_for_hint(hint, matches);
                 } else {
                     panic!("Got turn choice {:?}, but turn result {:?}",
-                           turn.choice, turn.result);
+                           turn_record.choice, turn_record.result);
                 }
             }
             TurnChoice::Discard(index) => {
                 let known_useless_indices = self.find_useless_cards(
-                    &self.last_view, &self.get_player_public_info(&turn.player)
+                    &self.last_view, &self.get_player_public_info(&turn_record.player)
                 );
 
                 if known_useless_indices.len() > 1 {
@@ -881,19 +873,19 @@ impl PlayerStrategy for InformationPlayerStrategy {
                     ));
                 }
 
-                if let &TurnResult::Discard(ref card) = &turn.result {
-                    self.update_public_info_for_discard_or_play(view, &turn.player, index, card);
+                if let &TurnResult::Discard(ref card) = &turn_record.result {
+                    self.update_public_info_for_discard_or_play(view, &turn_record.player, index, card);
                 } else {
                     panic!("Got turn choice {:?}, but turn result {:?}",
-                           turn.choice, turn.result);
+                           turn_record.choice, turn_record.result);
                 }
             }
             TurnChoice::Play(index) =>  {
-                if let &TurnResult::Play(ref card, _) = &turn.result {
-                    self.update_public_info_for_discard_or_play(view, &turn.player, index, card);
+                if let &TurnResult::Play(ref card, _) = &turn_record.result {
+                    self.update_public_info_for_discard_or_play(view, &turn_record.player, index, card);
                 } else {
                     panic!("Got turn choice {:?}, but turn result {:?}",
-                           turn.choice, turn.result);
+                           turn_record.choice, turn_record.result);
                 }
             }
         }

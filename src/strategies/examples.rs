@@ -1,4 +1,4 @@
-use simulator::*;
+use strategy::*;
 use game::*;
 use rand::{self, Rng};
 
@@ -66,6 +66,6 @@ impl PlayerStrategy for RandomStrategyPlayer {
             TurnChoice::Discard(0)
         }
     }
-    fn update(&mut self, _: &Turn, _: &BorrowedGameView) {
+    fn update(&mut self, _: &TurnRecord, _: &BorrowedGameView) {
     }
 }

@@ -7,6 +7,7 @@ extern crate crossbeam;
 mod helpers;
 mod game;
 mod simulator;
+mod strategy;
 mod strategies {
     pub mod examples;
     pub mod cheating;
@@ -122,20 +123,20 @@ fn main() {
     };
 
     let strategy_str : &str = &matches.opt_str("g").unwrap_or("cheat".to_string());
-    let strategy_config : Box<simulator::GameStrategyConfig + Sync> = match strategy_str {
+    let strategy_config : Box<strategy::GameStrategyConfig + Sync> = match strategy_str {
         "random" => {
             Box::new(strategies::examples::RandomStrategyConfig {
                 hint_probability: 0.4,
                 play_probability: 0.2,
-            }) as Box<simulator::GameStrategyConfig + Sync>
+            }) as Box<strategy::GameStrategyConfig + Sync>
         },
         "cheat" => {
             Box::new(strategies::cheating::CheatingStrategyConfig::new())
-                as Box<simulator::GameStrategyConfig + Sync>
+                as Box<strategy::GameStrategyConfig + Sync>
         },
         "info" => {
             Box::new(strategies::information::InformationStrategyConfig::new())
-                as Box<simulator::GameStrategyConfig + Sync>
+                as Box<strategy::GameStrategyConfig + Sync>
         },
         _ => {
             print_usage(&program, opts);

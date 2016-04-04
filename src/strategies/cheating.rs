@@ -2,7 +2,7 @@ use std::rc::Rc;
 use std::cell::{RefCell};
 use std::collections::{HashMap, HashSet};
 
-use simulator::*;
+use strategy::*;
 use game::*;
 
 // strategy that explicitly cheats by using Rc/RefCell
@@ -208,6 +208,6 @@ impl PlayerStrategy for CheatingPlayerStrategy {
         }
         TurnChoice::Discard(index)
     }
-    fn update(&mut self, _: &Turn, _: &BorrowedGameView) {
+    fn update(&mut self, _: &TurnRecord, _: &BorrowedGameView) {
     }
 }

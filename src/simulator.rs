@@ -4,46 +4,21 @@ use std::fmt;
 use crossbeam;
 
 use game::*;
-
-// Traits to implement for any valid Hanabi strategy
-
-// Represents the strategy of a given player
-pub trait PlayerStrategy {
-    // A function to decide what to do on the player's turn.
-    // Given a BorrowedGameView, outputs their choice.
-    fn decide(&mut self, &BorrowedGameView) -> TurnChoice;
-    // A function to update internal state after other players' turns.
-    // Given what happened last turn, and the new state.
-    fn update(&mut self, &Turn, &BorrowedGameView);
-}
-// Represents the overall strategy for a game
-// Shouldn't do much, except store configuration parameters and
-// possibility initialize some shared randomness between players
-pub trait GameStrategy {
-    fn initialize(&self, Player, &BorrowedGameView) -> Box<PlayerStrategy>;
-}
-
-// Represents configuration for a strategy.
-// Acts as a factory for game strategies, so we can play many rounds
-pub trait GameStrategyConfig {
-    fn initialize(&self, &GameOptions) -> Box<GameStrategy>;
-}
+use strategy::*;
 
 fn new_deck(seed: u32) -> Cards {
     let mut deck: Cards = Cards::new();
 
     for &color in COLORS.iter() {
         for &value in VALUES.iter() {
-            let count = get_count_for_value(value);
-            for _ in 0..count {
+            for _ in 0..get_count_for_value(value) {
                 deck.push(Card::new(color, value));
             }
         }
     };
 
     rand::ChaChaRng::from_seed(&[seed]).shuffle(&mut deck[..]);
-
-    trace!("Created deck: {:?}", deck);
+    debug!("Deck: {:?}", deck);
     deck
 }
 
@@ -59,7 +34,7 @@ pub fn simulate_once(
     let mut game = GameState::new(opts, deck);
 
     let mut strategies = game.get_players().map(|player| {
-        (player, game_strategy.initialize(player.clone(), &game.get_view(player)))
+        (player, game_strategy.initialize(player, &game.get_view(player)))
     }).collect::<HashMap<Player, Box<PlayerStrategy>>>();
 
     while !game.is_over() {

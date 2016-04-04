@@ -459,6 +459,13 @@ pub trait GameView {
         })
     }
 
+    fn get_other_players(&self) -> Vec<Player> {
+        self.get_board().get_players()
+            .filter(|&player| player != self.me())
+            .collect::<Vec<_>>()
+    }
+
+
     fn someone_else_can_play(&self) -> bool {
         self.get_board().get_players().filter(|&player| {
             player != self.me()

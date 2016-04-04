@@ -23,10 +23,10 @@ fn new_deck(seed: u32) -> Cards {
 }
 
 pub fn simulate_once(
-        opts: &GameOptions,
-        game_strategy: Box<GameStrategy>,
-        seed_opt: Option<u32>,
-    ) -> GameState {
+    opts: &GameOptions,
+    game_strategy: Box<GameStrategy>,
+    seed_opt: Option<u32>,
+) -> GameState {
 
     let seed = seed_opt.unwrap_or(rand::thread_rng().next_u32());
     let deck = new_deck(seed);
@@ -119,13 +119,13 @@ impl fmt::Display for Histogram {
 }
 
 pub fn simulate<T: ?Sized>(
-        opts: &GameOptions,
-        strat_config: Box<T>,
-        first_seed_opt: Option<u32>,
-        n_trials: u32,
-        n_threads: u32,
-        progress_info: Option<u32>,
-    ) where T: GameStrategyConfig + Sync {
+    opts: &GameOptions,
+    strat_config: Box<T>,
+    first_seed_opt: Option<u32>,
+    n_trials: u32,
+    n_threads: u32,
+    progress_info: Option<u32>,
+) where T: GameStrategyConfig + Sync {
 
     let first_seed = first_seed_opt.unwrap_or(rand::thread_rng().next_u32());
 

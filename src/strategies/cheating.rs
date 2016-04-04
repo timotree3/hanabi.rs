@@ -103,14 +103,12 @@ impl CheatingPlayerStrategy {
 
         let my_hand_value = self.hand_play_value(view, my_hand);
 
-        for player in view.board.get_players() {
-            if player != self.me {
-                if view.has_card(&player, card) {
-                    let their_hand_value = self.hand_play_value(view, hands.get(&player).unwrap());
-                    // they can play this card, and have less urgent plays than i do
-                    if their_hand_value < my_hand_value {
-                        return 10 - (card.value as i32)
-                    }
+        for player in view.get_other_players() {
+            if view.has_card(&player, card) {
+                let their_hand_value = self.hand_play_value(view, hands.get(&player).unwrap());
+                // they can play this card, and have less urgent plays than i do
+                if their_hand_value < my_hand_value {
+                    return 10 - (card.value as i32)
                 }
             }
         }

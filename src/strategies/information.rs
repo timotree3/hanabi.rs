@@ -9,6 +9,9 @@ use helpers::*;
 // we sometimes have 2 choices of value to choose
 // TODO: guess very aggressively at very end of game (first, see whether
 // situation ever occurs)
+// TODO: create more information:
+// any time more than 3 distinct values are known in public information
+// of any player's hand, can give even better hints
 
 #[derive(Debug,Clone)]
 struct ModulusInformation {
@@ -289,14 +292,14 @@ impl InformationPlayerStrategy {
                 }).collect::<Vec<_>>();
             // sort by probability of play, then by index
             ask_play.sort_by(|&&(_, i1, p1, _, _), &&(_, i2, p2, _, _)| {
-                    // *higher* probabilities are better
-                    let result = p2.partial_cmp(&p1);
-                    if result == None || result == Some(Ordering::Equal) {
-                        i1.cmp(&i2)
-                    } else {
-                        result.unwrap()
-                    }
-                });
+                // *higher* probabilities are better
+                let result = p2.partial_cmp(&p1);
+                if result == None || result == Some(Ordering::Equal) {
+                    i1.cmp(&i2)
+                } else {
+                    result.unwrap()
+                }
+            });
 
 
             for &(_, i, _, _, _) in ask_play {
@@ -315,14 +318,14 @@ impl InformationPlayerStrategy {
             }).collect::<Vec<_>>();
         // sort by probability of play, then by index
         ask_partition.sort_by(|&&(_, i1, p1, _, _), &&(_, i2, p2, _, _)| {
-                // *higher* probabilities are better
-                let result = p2.partial_cmp(&p1);
-                if result == None || result == Some(Ordering::Equal) {
-                    i1.cmp(&i2)
-                } else {
-                    result.unwrap()
-                }
-            });
+            // *higher* probabilities are better
+            let result = p2.partial_cmp(&p1);
+            if result == None || result == Some(Ordering::Equal) {
+                i1.cmp(&i2)
+            } else {
+                result.unwrap()
+            }
+        });
 
         for &(card_table, i, _, _, _) in ask_partition {
             let question = CardPossibilityPartition::new(i, info_remaining, card_table, view);
@@ -341,9 +344,9 @@ impl InformationPlayerStrategy {
             .fold(
                 ModulusInformation::none(),
                 |mut answer_info, question| {
-                  let new_answer_info = question.answer_info(hand, view);
-                  answer_info.combine(new_answer_info);
-                  answer_info
+                    let new_answer_info = question.answer_info(hand, view);
+                    answer_info.combine(new_answer_info);
+                    answer_info
                 })
     }
 
@@ -359,15 +362,13 @@ impl InformationPlayerStrategy {
     }
 
     fn get_hint_sum_info(&self, total_info: u32, view: &OwnedGameView) -> ModulusInformation {
-        view.get_board().get_players().filter(|&player| {
-            player != self.me
-        }).fold(
+        view.get_other_players().iter().fold(
             ModulusInformation::new(total_info, 0),
             |mut sum_info, player| {
                 let answer = self.get_hint_info_for_player(&player, total_info, view);
                 sum_info.add(&answer);
                 sum_info
-        })
+            })
     }
 
     fn infer_own_from_hint_sum(&mut self, mut hint: ModulusInformation) {
@@ -394,32 +395,27 @@ impl InformationPlayerStrategy {
 
     fn update_from_hint_sum(&mut self, mut hint: ModulusInformation) {
         let hinter = self.last_view.board.player;
-        let players = {
-            let view = &self.last_view;
-            view.board.get_players()
-        };
-        for player in players {
-            if (player != hinter) && (player != self.me) {
-                {
-                    let view = &self.last_view;
-                    let hint_info = self.get_hint_info_for_player(&player, hint.modulus, view);
-                    hint.subtract(&hint_info);
-                }
-
-                // *take* instead of borrowing mutably, because of borrow rules...
-                let mut hand_info = self.take_public_info(&player);
-
-                {
-                    let view = &self.last_view;
-                    let hand = view.get_hand(&player);
-                    let questions = Self::get_questions(hint.modulus, view, &mut hand_info);
-                    for question in questions {
-                        let answer = question.answer(hand, view);
-                        question.acknowledge_answer(answer, &mut hand_info, view);
-                    }
-                }
-                self.return_public_info(&player, hand_info);
+        for player in self.last_view.get_other_players() {
+            if player == hinter { continue; }
+            {
+                let view = &self.last_view;
+                let hint_info = self.get_hint_info_for_player(&player, hint.modulus, view);
+                hint.subtract(&hint_info);
             }
+
+            // *take* instead of borrowing mutably, because of borrow rules...
+            let mut hand_info = self.take_public_info(&player);
+
+            {
+                let view = &self.last_view;
+                let hand = view.get_hand(&player);
+                let questions = Self::get_questions(hint.modulus, view, &mut hand_info);
+                for question in questions {
+                    let answer = question.answer(hand, view);
+                    question.acknowledge_answer(answer, &mut hand_info, view);
+                }
+            }
+            self.return_public_info(&player, hand_info);
         }
         if self.me == hinter {
             assert!(hint.value == 0);
@@ -437,11 +433,9 @@ impl InformationPlayerStrategy {
     fn get_play_score(&self, view: &OwnedGameView, card: &Card) -> f32 {
         let mut num_with = 1;
         if view.board.deck_size > 0 {
-            for player in view.board.get_players() {
-                if player != self.me {
-                    if view.has_card(&player, card) {
-                        num_with += 1;
-                    }
+            for player in view.get_other_players() {
+                if view.has_card(&player, card) {
+                    num_with += 1;
                 }
             }
         }
@@ -727,7 +721,7 @@ impl PlayerStrategy for InformationPlayerStrategy {
         let view = &self.last_view;
 
         for player in view.board.get_players() {
-           let hand_info = self.get_player_public_info(&player);
+            let hand_info = self.get_player_public_info(&player);
             debug!("Current state of hand_info for {}:", player);
             for (i, card_table) in hand_info.iter().enumerate() {
                 debug!("  Card {}: {}", i, card_table);
@@ -769,7 +763,7 @@ impl PlayerStrategy for InformationPlayerStrategy {
         // make a possibly risky play
         // TODO: consider removing this, if we improve information transfer
         if view.board.lives_remaining > 1 &&
-           view.board.discard_size() <= discard_threshold
+            view.board.discard_size() <= discard_threshold
         {
             let mut risky_playable_cards = private_info.iter().enumerate().filter(|&(_, card_table)| {
                 // card is either playable or dead
@@ -828,7 +822,7 @@ impl PlayerStrategy for InformationPlayerStrategy {
         // - we have no known useless cards
         // - there are no hints remaining OR nobody else can play
 
-        // Play the best discardable card
+        // Discard the best discardable card
         let mut compval = 0.0;
         let mut index = 0;
         for (i, card_table) in private_info.iter().enumerate() {

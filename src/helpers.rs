@@ -212,7 +212,7 @@ impl CardInfo for SimpleCardInfo {
     }
     fn is_possible(&self, card: &Card) -> bool {
         self.color_info.is_possible(card.color) &&
-        self.value_info.is_possible(card.value)
+            self.value_info.is_possible(card.value)
 
     }
     fn mark_color_false(&mut self, color: Color) {
@@ -271,7 +271,7 @@ impl CardPossibilityTable {
         let remove = {
             let weight =
                 self.possible.get_mut(card)
-                    .expect(&format!("Decrementing weight for impossible card: {}", card));
+                .expect(&format!("Decrementing weight for impossible card: {}", card));
             *weight -= 1;
             *weight == 0
         };
@@ -395,12 +395,14 @@ impl <T> HandInfo<T> where T: CardInfo {
     pub fn iter(&self) -> slice::Iter<T>        { self.hand_info.iter() }
     pub fn len(&self) -> usize                  { self.hand_info.len() }
 }
+
 impl <T> Index<usize> for HandInfo<T> where T: CardInfo {
     type Output = T;
     fn index(&self, index: usize) -> &T {
         &self.hand_info[index]
     }
 }
+
 impl <T> IndexMut<usize> for HandInfo<T> where T: CardInfo {
     fn index_mut(&mut self, index: usize) -> &mut T {
         &mut self.hand_info[index]

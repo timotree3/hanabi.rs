@@ -18,6 +18,12 @@ impl GameStrategyConfig for SimpleStrategyConfig {
     }
 }
 
+enum CardState {
+    Playable,
+    Indispensable,
+    Unknown,
+}
+
 pub struct SimpleStrategy;
 
 impl SimpleStrategy {
@@ -33,43 +39,52 @@ impl GameStrategy for SimpleStrategy {
                 (player, hand_info)
             }).collect::<HashMap<_,_>>();
 
+        let card_states =
+            view.board.get_players().map(|player| {
+                let card_states = (0..view.board.hand_size).map(|_| CardState::Unknown ).collect::<Vec<_>>();
+                (player, card_states)
+            }).collect::<HashMap<_,_>>();
+
         Box::new(SimplePlayerStrategy {
             me: player,
             public_info: public_info,
             public_counts: CardCounts::new(),
+            card_states: card_states,
         })
     }
 }
 
 pub struct SimplePlayerStrategy {
     me: Player,
-    public_info: HashMap<Player, HandInfo<CardPossibilityTable>>,
+    public_info: HashMap<Player, HandInfo>,
     public_counts: CardCounts, // what any newly drawn card should be
+    card_states: HashMap<Player, Vec<CardState>>,
 }
 
 impl SimplePlayerStrategy {
 
     // how badly do we need to play a particular card
-    fn get_average_play_score(&self, view: &BorrowedGameView, card_table: &CardPossibilityTable) -> f32 {
-        let f = |card: &Card| { self.get_play_score(view, card) };
+    fn get_average_play_score(&self, view: &BorrowedGameView, card_table: &CardPossibilityTable, for_me: bool) -> f32 {
+        let f = |card: &Card| { self.get_play_score(view, card, for_me) };
         card_table.weighted_score(&f)
     }
 
-    fn get_play_score(&self, view: &BorrowedGameView, card: &Card) -> f32 {
-        let mut num_with = 1;
+    fn get_play_score(&self, view: &BorrowedGameView, card: &Card, for_me: bool) -> f32 {
+        let mut num_with = 0;
+        if for_me {
+            num_with += 1;
+        }
         if view.board.deck_size > 0 {
-            for player in view.board.get_players() {
-                if player != self.me {
-                    if view.has_card(&player, card) {
-                        num_with += 1;
-                    }
+            for player in view.get_other_players() {
+                if view.has_card(&player, card) {
+                    num_with += 1;
                 }
             }
         }
         (10.0 - card.value as f32) / (num_with as f32)
     }
 
-    fn find_useless_cards(&self, view: &BorrowedGameView, hand: &HandInfo<CardPossibilityTable>) -> Vec<usize> {
+    fn find_useless_cards(&self, view: &BorrowedGameView, hand: &HandInfo) -> Vec<usize> {
         let mut useless: HashSet<usize> = HashSet::new();
         let mut seen: HashMap<Card, usize> = HashMap::new();
 
@@ -93,11 +108,11 @@ impl SimplePlayerStrategy {
         return useless_vec;
     }
 
-    fn get_player_public_info(&self, player: &Player) -> &HandInfo<CardPossibilityTable> {
+    fn get_player_public_info(&self, player: &Player) -> &HandInfo {
         self.public_info.get(player).unwrap()
     }
 
-    fn get_player_public_info_mut(&mut self, player: &Player) -> &mut HandInfo<CardPossibilityTable> {
+    fn get_player_public_info_mut(&mut self, player: &Player) -> &mut HandInfo {
         self.public_info.get_mut(player).unwrap()
     }
 
@@ -119,9 +134,13 @@ impl SimplePlayerStrategy {
             assert!(info[index].is_possible(card));
             info.remove(index);
 
+            let mut cards_state = self.card_states.get_mut(&player).unwrap();
+            cards_state.remove(index);
+
             // push *before* incrementing public counts
             if info.len() < view.hand_size(&player) {
                 info.push(new_card_table);
+                cards_state.push(CardState::Unknown);
             }
         }
 
@@ -137,7 +156,7 @@ impl SimplePlayerStrategy {
         self.public_counts.increment(card);
     }
 
-    fn get_private_info(&self, view: &BorrowedGameView) -> HandInfo<CardPossibilityTable> {
+    fn get_private_info(&self, view: &BorrowedGameView) -> HandInfo {
         let mut info = self.get_player_public_info(&self.me).clone();
 
         for card_table in info.iter_mut() {
@@ -157,7 +176,7 @@ impl SimplePlayerStrategy {
         // get post-hint hand_info
         let mut hand_info = self.get_player_public_info(&hint.player).clone();
 
-        let mut goodness = 1.0;
+        let mut goodness = 0.0;
         for (i, card_table) in hand_info.iter_mut().enumerate() {
             let card = &hand[i];
             if card_table.probability_is_dead(&view.board) == 1.0 {
@@ -193,7 +212,7 @@ impl SimplePlayerStrategy {
                 bonus *= 2;
             }
 
-            goodness *= (bonus as f32) * (old_weight / new_weight);
+            goodness += bonus as f32 * (old_weight - new_weight);
         }
         goodness
     }
@@ -230,6 +249,8 @@ impl SimplePlayerStrategy {
     }
 }
 
+// TODO: consider a single card hint to mean playable
+// TODO: hint assuming that players before hinted  will play playable things
 impl PlayerStrategy for SimplePlayerStrategy {
     fn decide(&mut self, view: &BorrowedGameView) -> TurnChoice {
         for player in view.board.get_players() {
@@ -257,7 +278,7 @@ impl PlayerStrategy for SimplePlayerStrategy {
             let mut play_index = 0;
 
             for (index, card_table) in playable_cards {
-                let score = self.get_average_play_score(view, card_table);
+                let score = self.get_average_play_score(view, card_table, true);
                 if score > play_score {
                     play_score = score;
                     play_index = index;
@@ -267,15 +288,8 @@ impl PlayerStrategy for SimplePlayerStrategy {
             return TurnChoice::Play(play_index)
         }
 
-        let discard_threshold =
-            view.board.total_cards
-            - (COLORS.len() * VALUES.len()) as u32
-            - (view.board.num_players * view.board.hand_size);
-
         // make a possibly risky play
-        if view.board.lives_remaining > 1 &&
-           view.board.discard_size() <= discard_threshold
-        {
+        if view.board.lives_remaining > 1 {
             let mut risky_playable_cards = private_info.iter().enumerate().filter(|&(_, card_table)| {
                 // card is either playable or dead
                 card_table.probability_of_predicate(&|card| {
@@ -299,34 +313,23 @@ impl PlayerStrategy for SimplePlayerStrategy {
         }
 
         let useless_indices = self.find_useless_cards(view, &private_info);
-
-        if view.board.discard_size() <= discard_threshold {
-            if useless_indices.len() > 0 {
-                return TurnChoice::Discard(useless_indices[0]);
-            }
+        if useless_indices.len() > 0 {
+            return TurnChoice::Discard(useless_indices[0]);
         }
 
         // hinting is better than discarding dead cards
         // (probably because it stalls the deck-drawing).
+        // TODO: only do this if there's a good hint to give
         if view.board.hints_remaining > 0 {
             return self.get_hint(view);
-        }
-
-        // if anything is totally useless, discard it
-        if useless_indices.len() > 0 {
-            return TurnChoice::Discard(useless_indices[0]);
         }
 
         // Play the best discardable card
         let mut compval = 0.0;
         let mut index = 0;
         for (i, card_table) in private_info.iter().enumerate() {
-            let probability_is_seen = card_table.probability_of_predicate(&|card| {
-                view.can_see(card)
-            });
             let my_compval =
-                20.0 * probability_is_seen
-                + 10.0 * card_table.probability_is_dispensable(&view.board)
+                10.0 * card_table.probability_is_dispensable(&view.board)
                 + card_table.average_value();
 
             if my_compval > compval {

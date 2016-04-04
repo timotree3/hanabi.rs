@@ -4,6 +4,9 @@ use std::cmp::Ordering;
 use simulator::*;
 use game::*;
 
+// TODO: use random extra information - i.e. when casting up and down,
+// we sometimes have 2 choices of value to choose
+
 #[derive(Debug,Clone)]
 struct ModulusInformation {
     modulus: u32,
@@ -261,50 +264,67 @@ impl InformationPlayerStrategy {
             *info_remaining <= 1
         }
 
-        let mut augmented_hand_info = hand_info.iter().enumerate()
-            .filter(|&(_, card_table)| {
-                if card_table.probability_is_dead(&view.board) == 1.0 {
-                    false
-                } else if card_table.is_determined() {
-                    false
-                } else {
-                    true
-                }
-            })
+        let augmented_hand_info = hand_info.iter().enumerate()
             .map(|(i, card_table)| {
-                let p = card_table.probability_is_playable(&view.board);
-                (p, card_table, i)
+                let p_play = card_table.probability_is_playable(&view.board);
+                let p_dead = card_table.probability_is_dead(&view.board);
+                let is_determined = card_table.is_determined();
+                (card_table, i, p_play, p_dead, is_determined)
             })
             .collect::<Vec<_>>();
 
-        // sort by probability of play, then by index
-        augmented_hand_info.sort_by(|&(p1, _, i1), &(p2, _, i2)| {
-            // *higher* probabilities are better
-            let result = p2.partial_cmp(&p1);
-            if result == None || result == Some(Ordering::Equal) {
-                i1.cmp(&i2)
-            } else {
-                result.unwrap()
-            }
-        });
+        let known_playable = augmented_hand_info.iter().filter(|&&(_, _, p_play, _, _)| {
+            p_play == 1.0
+        }).collect::<Vec<_>>().len();
 
-        // let known_playable = augmented_hand_info[0].0 == 1.0;
-        // // if there is a card that is definitely playable, don't ask about playability
-        // if !known_playable {
-        for &(p, _, i) in &augmented_hand_info {
-            // if the play probability is very low, ignore.
-            // probably there's only 1-2 possible cards for it, out of many
-            if (p > 0.1) && (p < 1.0) {
+        if known_playable == 0 {
+            let mut ask_play = augmented_hand_info.iter()
+                .filter(|&&(_, _, p_play, p_dead, is_determined)| {
+                    if is_determined { return false; }
+                    if p_dead == 1.0  { return false; }
+                    if p_play == 1.0 || p_play < 0.2 { return false; }
+                    true
+                }).collect::<Vec<_>>();
+            // sort by probability of play, then by index
+            ask_play.sort_by(|&&(_, i1, p1, _, _), &&(_, i2, p2, _, _)| {
+                    // *higher* probabilities are better
+                    let result = p2.partial_cmp(&p1);
+                    if result == None || result == Some(Ordering::Equal) {
+                        i1.cmp(&i2)
+                    } else {
+                        result.unwrap()
+                    }
+                });
+
+
+            for &(_, i, _, _, _) in ask_play {
                 if add_question(&mut questions, &mut info_remaining, IsPlayable {index: i}) {
                     return questions;
                 }
             }
+        } else {
+            debug!("Something known playable");
         }
-        // } else {
-        //     debug!("Something known playable");
-        // }
 
-        for &(_, card_table, i) in &augmented_hand_info {
+        let mut ask_partition = augmented_hand_info.iter()
+            .filter(|&&(_, _, _, p_dead, is_determined)| {
+                if is_determined { return false }
+                // TODO: possibly still valuable to ask?
+                if p_dead == 1.0 { return false }
+                true
+            }).collect::<Vec<_>>();
+        // sort by probability of play, then by index
+        ask_partition.sort_by(|&&(_, i1, p1, _, _), &&(_, i2, p2, _, _)| {
+                // *higher* probabilities are better
+                let result = p2.partial_cmp(&p1);
+                if result == None || result == Some(Ordering::Equal) {
+                    i1.cmp(&i2)
+                } else {
+                    result.unwrap()
+                }
+            });
+
+        for &(card_table, i, _, _, _) in ask_partition {
             let question = CardPossibilityPartition::new(i, info_remaining, card_table, view);
             if add_question(&mut questions, &mut info_remaining, question) {
                 return questions;

@@ -621,6 +621,57 @@ impl InformationPlayerStrategy {
         goodness
     }
 
+    // Returns the number of ways to hint the player.
+    fn get_info_per_player(&self, player: Player) -> u32 {
+        let info = self.get_player_public_info(&player);
+
+        let may_be_all_one_color = COLORS.iter().any(|color| {
+            info.iter().all(|card| {
+                card.can_be_color(*color)
+            })
+        });
+
+        let may_be_all_one_number = VALUES.iter().any(|value| {
+            info.iter().all(|card| {
+                card.can_be_value(*value)
+            })
+        });
+
+        return if !may_be_all_one_color && !may_be_all_one_number { 4 } else { 3 }
+
+        // Determine if both:
+        //  - it is public that there are at least two colors
+        //  - it is public that there are at least two numbers
+    }
+
+    fn get_other_players_starting_after(&self, player: Player) -> Vec<Player> {
+        let view = &self.last_view;
+        let n = view.board.num_players;
+        (0 .. n - 1).into_iter().map(|i| { (player + 1 + i) % n }).collect()
+    }
+
+    fn get_best_hint_of_options(&self, hint_player: Player, hint_option_set: HashSet<Hinted>) -> Hinted {
+        let view = &self.last_view;
+
+        // using hint goodness barely helps
+        let mut hint_options = hint_option_set.into_iter().map(|hinted| {
+            (self.hint_goodness(&hinted, &hint_player, view), hinted)
+        }).collect::<Vec<_>>();
+
+        hint_options.sort_by(|h1, h2| {
+            h2.0.partial_cmp(&h1.0).unwrap_or(Ordering::Equal)
+        });
+
+        if hint_options.len() == 0 {
+            // NOTE: Technically possible, but never happens
+        } else {
+            if hint_options.len() > 1 {
+                debug!("Choosing amongst hint options: {:?}", hint_options);
+            }
+        }
+        hint_options.remove(0).1
+    }
+
     fn get_hint(&self) -> TurnChoice {
         let view = &self.last_view;
 
@@ -629,64 +680,94 @@ impl InformationPlayerStrategy {
         // 0. a value hint on card i
         // 1. a color hint on card i
         // 2. any hint not involving card i
+        // However, if it is public info that the player has at least two colors
+        // and at least two numbers, then instead we do
+        // 2. any color hint not involving i
+        // 3. any color hint not involving i
 
         // TODO: make it so space of hints is larger when there is
         // knowledge about the cards?
 
-        let total_info = 3 * (view.board.num_players - 1);
+        let info_per_player: Vec<Player> = self.get_other_players_starting_after(self.me).iter().map(
+            |player| { self.get_info_per_player(*player)  }
+        ).collect();
+        let total_info = info_per_player.iter().fold(0, |a, b| a + b);
 
         let hint_info = self.get_hint_sum_info(total_info, view);
 
-        let hint_type = hint_info.value % 3;
-        let player_amt = (hint_info.value - hint_type) / 3;
+        //let hint_type = hint_info.value % 3;
+        //let player_amt = (hint_info.value - hint_type) / 3;
+        let mut hint_type = hint_info.value;
+        let mut player_amt = 0;
+        while hint_type >= info_per_player[player_amt] {
+            hint_type -= info_per_player[player_amt];
+            player_amt += 1;
+        }
+        let hint_info_we_can_give_to_this_player = info_per_player[player_amt];
 
-        let hint_player = (self.me + 1 + player_amt) % view.board.num_players;
+        let hint_player = (self.me + 1 + (player_amt as u32)) % view.board.num_players;
 
         let hand = view.get_hand(&hint_player);
         let card_index = self.get_index_for_hint(self.get_player_public_info(&hint_player), view);
         let hint_card = &hand[card_index];
 
-
-        let hinted = match hint_type {
-            0 => {
-                Hinted::Value(hint_card.value)
-            }
-            1 => {
-                Hinted::Color(hint_card.color)
-            }
-            2 => {
-                // NOTE: this doesn't do that much better than just hinting
-                // the first thing that doesn't match the hint_card
-                let mut hint_option_set = HashSet::new();
-                for card in hand {
-                    if card.color != hint_card.color {
-                        hint_option_set.insert(Hinted::Color(card.color));
-                    }
-                    if card.value != hint_card.value {
-                        hint_option_set.insert(Hinted::Value(card.value));
-                    }
+        let hinted = if hint_info_we_can_give_to_this_player == 3 {
+            match hint_type {
+                0 => {
+                    Hinted::Value(hint_card.value)
                 }
-                // using hint goodness barely helps
-                let mut hint_options = hint_option_set.into_iter().map(|hinted| {
-                    (self.hint_goodness(&hinted, &hint_player, view), hinted)
-                }).collect::<Vec<_>>();
-
-                hint_options.sort_by(|h1, h2| {
-                    h2.0.partial_cmp(&h1.0).unwrap_or(Ordering::Equal)
-                });
-
-                if hint_options.len() == 0 {
-                    // NOTE: Technically possible, but never happens
+                1 => {
                     Hinted::Color(hint_card.color)
-                } else {
-                    if hint_options.len() > 1 {
-                        debug!("Choosing amongst hint options: {:?}", hint_options);
+                }
+                2 => {
+                    // NOTE: this doesn't do that much better than just hinting
+                    // the first thing that doesn't match the hint_card
+                    let mut hint_option_set = HashSet::new();
+                    for card in hand {
+                        if card.color != hint_card.color {
+                            hint_option_set.insert(Hinted::Color(card.color));
+                        }
+                        if card.value != hint_card.value {
+                            hint_option_set.insert(Hinted::Value(card.value));
+                        }
                     }
-                    hint_options.remove(0).1
+                    self.get_best_hint_of_options(hint_player, hint_option_set)
+                }
+                _ => {
+                    panic!("Invalid hint type")
                 }
             }
-            _ => {
-                panic!("Invalid hint type")
+        } else {
+            match hint_type {
+                0 => {
+                    Hinted::Value(hint_card.value)
+                }
+                1 => {
+                    Hinted::Color(hint_card.color)
+                }
+                2 => {
+                    // Any value hint for a card other than the first
+                    let mut hint_option_set = HashSet::new();
+                    for card in hand {
+                        if card.value != hint_card.value {
+                            hint_option_set.insert(Hinted::Value(card.value));
+                        }
+                    }
+                    self.get_best_hint_of_options(hint_player, hint_option_set)
+                }
+                3 => {
+                    // Any color hint for a card other than the first
+                    let mut hint_option_set = HashSet::new();
+                    for card in hand {
+                        if card.color != hint_card.color {
+                            hint_option_set.insert(Hinted::Color(card.color));
+                        }
+                    }
+                    self.get_best_hint_of_options(hint_player, hint_option_set)
+                }
+                _ => {
+                    panic!("Invalid hint type")
+                }
             }
         };
 
@@ -697,23 +778,46 @@ impl InformationPlayerStrategy {
     }
 
     fn infer_from_hint(&mut self, hint: &Hint, result: &Vec<bool>) {
-        let n = self.last_view.board.num_players;
-        let total_info = 3 * (n - 1);
-
         let hinter = self.last_view.board.player;
+
+        let info_per_player: Vec<Player> = self.get_other_players_starting_after(hinter).iter().map(
+            |player| { self.get_info_per_player(*player)  }
+        ).collect();
+        let total_info = info_per_player.iter().fold(0, |a, b| a + b);
+
+        let n = self.last_view.board.num_players;
+
         let player_amt = (n + hint.player - hinter - 1) % n;
 
-        let card_index = self.get_index_for_hint(self.get_player_public_info(&hint.player), &self.last_view);
-        let hint_type = if result[card_index] {
-            match hint.hinted {
-                Hinted::Value(_) => 0,
-                Hinted::Color(_) => 1,
-            }
-        } else {
-            2
-        };
+        let amt_from_prev_players = info_per_player.iter().take(player_amt as usize).fold(0, |a, b| a + b);
+        let hint_info_we_can_give_to_this_player = info_per_player[player_amt as usize];
 
-        let hint_value = player_amt * 3 + hint_type;
+        let card_index = self.get_index_for_hint(self.get_player_public_info(&hint.player), &self.last_view);
+        let hint_type =
+            if hint_info_we_can_give_to_this_player == 3 {
+                if result[card_index] {
+                    match hint.hinted {
+                        Hinted::Value(_) => 0,
+                        Hinted::Color(_) => 1,
+                    }
+                } else {
+                    2
+                }
+            } else {
+                if result[card_index] {
+                    match hint.hinted {
+                        Hinted::Value(_) => 0,
+                        Hinted::Color(_) => 1,
+                    }
+                } else {
+                    match hint.hinted {
+                        Hinted::Value(_) => 2,
+                        Hinted::Color(_) => 3,
+                    }
+                }
+            };
+
+        let hint_value = amt_from_prev_players + hint_type;
 
         let mod_info = ModulusInformation::new(total_info, hint_value);
 

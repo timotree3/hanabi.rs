@@ -306,6 +306,14 @@ impl CardPossibilityTable {
             .collect::<HashSet<_>>()
             .len() == 1
     }
+
+    pub fn can_be_color(&self, color: Color) -> bool {
+        self.get_possibilities().into_iter().any(|card| card.color == color)
+    }
+
+    pub fn can_be_value(&self, value: Value) -> bool {
+        self.get_possibilities().into_iter().any(|card| card.value == value)
+    }
 }
 impl <'a> From<&'a CardCounts> for CardPossibilityTable {
     fn from(counts: &'a CardCounts) -> CardPossibilityTable {

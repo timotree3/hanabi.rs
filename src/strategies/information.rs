@@ -498,7 +498,7 @@ impl InformationPlayerStrategy {
     }
 
     fn update_public_info_for_hint(&mut self, hint: &Hint, matches: &Vec<bool>) {
-        let mut info = self.get_player_public_info_mut(&hint.player);
+        let info = self.get_player_public_info_mut(&hint.player);
         info.update_for_hint(&hint.hinted, matches);
     }
 
@@ -511,7 +511,7 @@ impl InformationPlayerStrategy {
     ) {
         let new_card_table = CardPossibilityTable::from(&self.public_counts);
         {
-            let mut info = self.get_player_public_info_mut(&player);
+            let info = self.get_player_public_info_mut(&player);
             assert!(info[index].is_possible(card));
             info.remove(index);
 

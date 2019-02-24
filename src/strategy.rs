@@ -4,6 +4,11 @@ use game::*;
 
 // Represents the strategy of a given player
 pub trait PlayerStrategy {
+    // A function returning the name of a strategy.
+    // This is a method of PlayerStrategy rather than GameStrategyConfig
+    // so that the name may incorporate useful information that's specific
+    // to this player instance.
+    fn name(&self) -> String;
     // A function to decide what to do on the player's turn.
     // Given a BorrowedGameView, outputs their choice.
     fn decide(&mut self, &BorrowedGameView) -> TurnChoice;

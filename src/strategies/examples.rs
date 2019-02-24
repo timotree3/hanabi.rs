@@ -39,6 +39,9 @@ pub struct RandomStrategyPlayer {
 }
 
 impl PlayerStrategy for RandomStrategyPlayer {
+    fn name(&self) -> String {
+        format!("random(hint={}, play={})", self.hint_probability, self.play_probability)
+    }
     fn decide(&mut self, view: &BorrowedGameView) -> TurnChoice {
         let p = rand::random::<f64>();
         if p < self.hint_probability {

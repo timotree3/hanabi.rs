@@ -5,9 +5,11 @@ extern crate rand;
 extern crate crossbeam;
 extern crate fnv;
 extern crate float_ord;
+extern crate serde_json;
 
 mod helpers;
 mod game;
+mod json_output;
 mod simulator;
 mod strategy;
 mod strategies {
@@ -53,6 +55,9 @@ fn main() {
     opts.optopt("o", "output",
                 "Number of games after which to print an update",
                 "OUTPUT_FREQ");
+    opts.optopt("j", "json-output",
+                "Pattern for the JSON output file. '%s' will be replaced by the seed.",
+                "FILE_PATTERN");
     opts.optopt("t", "nthreads",
                 "Number of threads to use for simulation (default 1)",
                 "NTHREADS");
@@ -113,14 +118,24 @@ fn main() {
     let seed = matches.opt_str("s").map(|seed_str| { u32::from_str(&seed_str).unwrap() });
     let progress_info = matches.opt_str("o").map(|freq_str| { u32::from_str(&freq_str).unwrap() });
     let n_threads = u32::from_str(&matches.opt_str("t").unwrap_or("1".to_string())).unwrap();
+
+    let json_output_pattern = matches.opt_str("j");
+
     let n_players = u32::from_str(&matches.opt_str("p").unwrap_or("4".to_string())).unwrap();
     let strategy_str : &str = &matches.opt_str("g").unwrap_or("cheat".to_string());
 
-    sim_games(n_players, strategy_str, seed, n_trials, n_threads, progress_info).info();
+    sim_games(n_players, strategy_str, seed, n_trials, n_threads, progress_info, json_output_pattern).info();
 }
 
-fn sim_games(n_players: u32, strategy_str: &str, seed: Option<u32>, n_trials: u32, n_threads: u32, progress_info: Option<u32>)
-    -> simulator::SimResult {
+fn sim_games(
+        n_players: u32,
+        strategy_str: &str,
+        seed: Option<u32>,
+        n_trials: u32,
+        n_threads: u32,
+        progress_info: Option<u32>,
+        json_output_pattern: Option<String>,
+    ) -> simulator::SimResult {
     let hand_size = match n_players {
         2 => 5,
         3 => 5,
@@ -157,7 +172,7 @@ fn sim_games(n_players: u32, strategy_str: &str, seed: Option<u32>, n_trials: u3
             panic!("Unexpected strategy argument {}", strategy_str);
         },
     };
-    simulator::simulate(&game_opts, strategy_config, seed, n_trials, n_threads, progress_info)
+    simulator::simulate(&game_opts, strategy_config, seed, n_trials, n_threads, progress_info, json_output_pattern)
 }
 
 fn get_results_table() -> String {
@@ -193,7 +208,7 @@ fn get_results_table() -> String {
                                &|n_players| (format_players(n_players), dashes_long.clone()));
     let mut body = strategies.iter().map(|strategy| {
         make_twolines(&player_nums, (format_name(strategy), space.clone()), &|n_players| {
-            let simresult = sim_games(n_players, strategy, Some(seed), n_trials, n_threads, None);
+            let simresult = sim_games(n_players, strategy, Some(seed), n_trials, n_threads, None, None);
             (
                 format_score(simresult.average_score(), simresult.score_stderr()),
                 format_percent(simresult.percent_perfect(), simresult.percent_perfect_stderr())

@@ -5,6 +5,7 @@ use crossbeam;
 
 use game::*;
 use strategy::*;
+use json_output::*;
 
 fn new_deck(seed: u32) -> Cards {
     let mut deck: Cards = Cards::new();
@@ -22,18 +23,23 @@ fn new_deck(seed: u32) -> Cards {
     deck
 }
 
+
 pub fn simulate_once(
         opts: &GameOptions,
         game_strategy: Box<GameStrategy>,
         seed: u32,
-    ) -> GameState {
+        output_json: bool,
+    ) -> (GameState, Option<serde_json::Value>) {
+
     let deck = new_deck(seed);
 
-    let mut game = GameState::new(opts, deck);
+    let mut game = GameState::new(opts, deck.clone());
 
     let mut strategies = game.get_players().map(|player| {
         (player, game_strategy.initialize(player, &game.get_view(player)))
     }).collect::<FnvHashMap<Player, Box<PlayerStrategy>>>();
+
+    let mut actions = Vec::new();
 
     while !game.is_over() {
         let player = game.board.player;
@@ -49,6 +55,22 @@ pub fn simulate_once(
             let mut strategy = strategies.get_mut(&player).unwrap();
             strategy.decide(&game.get_view(player))
         };
+        if output_json {
+            actions.push(match choice {
+                TurnChoice::Hint(ref hint) =>  {
+                    action_clue(hint)
+                }
+                TurnChoice::Play(index) => {
+                    let card = &game.hands[&player][index];
+                    action_play(card)
+                }
+                TurnChoice::Discard(index) =>  {
+                    let card = &game.hands[&player][index];
+                    action_discard(card)
+                }
+            });
+        }
+
 
         let turn = game.process_choice(choice);
 
@@ -56,13 +78,20 @@ pub fn simulate_once(
             let mut strategy = strategies.get_mut(&player).unwrap();
             strategy.update(&turn, &game.get_view(player));
         }
-
     }
     debug!("");
     debug!("=======================================================");
     debug!("Final state:\n{}", game);
     debug!("SCORE: {:?}", game.score());
-    game
+    let json_output = if output_json {
+        let player_names = game.get_players().map(|player| {
+            strategies[&player].name()
+        }).collect();
+        Some(json_format(&deck, &actions, &player_names))
+    } else {
+        None
+    };
+    (game, json_output)
 }
 
 #[derive(Debug)]
@@ -134,12 +163,14 @@ pub fn simulate<T: ?Sized>(
         n_trials: u32,
         n_threads: u32,
         progress_info: Option<u32>,
+        json_output_pattern: Option<String>,
     ) -> SimResult
     where T: GameStrategyConfig + Sync {
 
     let first_seed = first_seed_opt.unwrap_or_else(|| rand::thread_rng().next_u32());
 
     let strat_config_ref = &strat_config;
+    let json_output_pattern_ref = &json_output_pattern;
     crossbeam::scope(|scope| {
         let mut join_handles = Vec::new();
         for i in 0..n_threads {
@@ -164,11 +195,23 @@ pub fn simulate<T: ?Sized>(
                             );
                         }
                     }
-                    let game = simulate_once(&opts, strat_config_ref.initialize(&opts), seed);
+                    let (game, json_output) = simulate_once(&opts,
+                                                      strat_config_ref.initialize(&opts),
+                                                      seed,
+                                                      json_output_pattern_ref.is_some());
                     let score = game.score();
                     lives_histogram.insert(game.board.lives_remaining);
                     score_histogram.insert(score);
                     if score != PERFECT_SCORE { non_perfect_seeds.push(seed); }
+                    match json_output_pattern_ref {
+                        Some(file_pattern) => {
+                            let file_pattern = file_pattern.clone().replace("%s", &seed.to_string());
+                            let path = std::path::Path::new(&file_pattern);
+                            let file = std::fs::File::create(path).unwrap();
+                            serde_json::to_writer(file, &json_output.unwrap()).unwrap();
+                        }
+                        None => { }
+                    }
                 }
                 if progress_info.is_some() {
                     info!("Thread {} done", i);

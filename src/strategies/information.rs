@@ -913,6 +913,10 @@ impl InformationPlayerStrategy {
 }
 
 impl PlayerStrategy for InformationPlayerStrategy {
+    fn name(&self) -> String {
+        String::from("info")
+    }
+
     fn decide(&mut self, _: &BorrowedGameView) -> TurnChoice {
         let mut public_info = self.public_info.clone();
         let turn_choice = self.decide_wrapped(&mut public_info);

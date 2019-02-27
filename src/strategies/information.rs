@@ -603,6 +603,12 @@ impl InformationPlayerStrategy {
         info.update_for_hint(&hint.hinted, matches);
     }
 
+    fn knows_playable_card(&self, player: &Player) -> bool {
+            self.get_player_public_info(&player).iter().any(|table| {
+                table.probability_is_playable(self.last_view.get_board()) == 1.0
+            })
+    }
+
     fn someone_else_needs_hint(&self) -> bool {
         // Does another player have a playable card, but doesn't know it?
         let view = &self.last_view;
@@ -610,10 +616,7 @@ impl InformationPlayerStrategy {
             let has_playable_card = view.get_hand(&player).iter().any(|card| {
                 view.get_board().is_playable(card)
             });
-            let knows_playable_card = self.get_player_public_info(&player).iter().any(|table| {
-                table.probability_is_playable(view.get_board()) == 1.0
-            });
-            has_playable_card && !knows_playable_card
+            has_playable_card && !self.knows_playable_card(&player)
         })
     }
 
@@ -622,10 +625,7 @@ impl InformationPlayerStrategy {
         // update accordingly.
         for player in self.last_view.board.get_players() {
             if player != self.last_view.board.player {
-                let knows_playable_card = self.get_player_public_info(&player).iter().any(|table| {
-                    table.probability_is_playable(self.last_view.get_board()) == 1.0
-                });
-                if !knows_playable_card {
+                if !self.knows_playable_card(&player) {
                     // If player doesn't know any playable cards, player doesn't have any playable
                     // cards.
                     let mut hand_info = self.take_public_info(&player);

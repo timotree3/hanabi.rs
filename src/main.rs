@@ -76,6 +76,8 @@ fn main() {
                  "Print a table of results for each strategy");
     opts.optflag("", "write-results-table",
                  "Update the results table in README.md");
+    opts.optflag("", "losses-only",
+                 "When saving JSON outputs, save lost games only");
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => { m }
         Err(f) => {
@@ -120,11 +122,12 @@ fn main() {
     let n_threads = u32::from_str(&matches.opt_str("t").unwrap_or("1".to_string())).unwrap();
 
     let json_output_pattern = matches.opt_str("j");
+    let json_losses_only = matches.opt_present("losses-only");
 
     let n_players = u32::from_str(&matches.opt_str("p").unwrap_or("4".to_string())).unwrap();
     let strategy_str : &str = &matches.opt_str("g").unwrap_or("cheat".to_string());
 
-    sim_games(n_players, strategy_str, seed, n_trials, n_threads, progress_info, json_output_pattern).info();
+    sim_games(n_players, strategy_str, seed, n_trials, n_threads, progress_info, json_output_pattern, json_losses_only).info();
 }
 
 fn sim_games(
@@ -135,6 +138,7 @@ fn sim_games(
         n_threads: u32,
         progress_info: Option<u32>,
         json_output_pattern: Option<String>,
+        json_losses_only: bool,
     ) -> simulator::SimResult {
     let hand_size = match n_players {
         2 => 5,
@@ -172,7 +176,7 @@ fn sim_games(
             panic!("Unexpected strategy argument {}", strategy_str);
         },
     };
-    simulator::simulate(&game_opts, strategy_config, seed, n_trials, n_threads, progress_info, json_output_pattern)
+    simulator::simulate(&game_opts, strategy_config, seed, n_trials, n_threads, progress_info, json_output_pattern, json_losses_only)
 }
 
 fn get_results_table() -> String {
@@ -208,7 +212,7 @@ fn get_results_table() -> String {
                                &|n_players| (format_players(n_players), dashes_long.clone()));
     let mut body = strategies.iter().map(|strategy| {
         make_twolines(&player_nums, (format_name(strategy), space.clone()), &|n_players| {
-            let simresult = sim_games(n_players, strategy, Some(seed), n_trials, n_threads, None, None);
+            let simresult = sim_games(n_players, strategy, Some(seed), n_trials, n_threads, None, None, false);
             (
                 format_score(simresult.average_score(), simresult.score_stderr()),
                 format_percent(simresult.percent_perfect(), simresult.percent_perfect_stderr())

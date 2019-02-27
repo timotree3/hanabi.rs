@@ -164,6 +164,7 @@ pub fn simulate<T: ?Sized>(
         n_threads: u32,
         progress_info: Option<u32>,
         json_output_pattern: Option<String>,
+        json_losses_only: bool,
     ) -> SimResult
     where T: GameStrategyConfig + Sync {
 
@@ -203,14 +204,13 @@ pub fn simulate<T: ?Sized>(
                     lives_histogram.insert(game.board.lives_remaining);
                     score_histogram.insert(score);
                     if score != PERFECT_SCORE { non_perfect_seeds.push(seed); }
-                    match json_output_pattern_ref {
-                        Some(file_pattern) => {
+                    if let Some(file_pattern) = json_output_pattern_ref {
+                        if !(score == PERFECT_SCORE && json_losses_only) {
                             let file_pattern = file_pattern.clone().replace("%s", &seed.to_string());
                             let path = std::path::Path::new(&file_pattern);
                             let file = std::fs::File::create(path).unwrap();
                             serde_json::to_writer(file, &json_output.unwrap()).unwrap();
                         }
-                        None => { }
                     }
                 }
                 if progress_info.is_some() {

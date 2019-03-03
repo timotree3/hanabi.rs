@@ -29,7 +29,7 @@ impl ModulusInformation {
     }
 
     pub fn combine(&mut self, other: Self) {
-        self.value = self.value * other.modulus + other.value;
+        self.value = self.value + self.modulus * other.value;
         self.modulus = self.modulus * other.modulus;
     }
 
@@ -39,10 +39,10 @@ impl ModulusInformation {
         let original_modulus = self.modulus;
         let original_value = self.value;
         self.modulus = self.modulus / modulus;
-        let value = self.value / self.modulus;
-        self.value = self.value - value * self.modulus;
+        let value = self.value % modulus;
+        self.value = self.value / modulus;
         assert!(original_modulus == modulus * self.modulus);
-        assert!(original_value == value * self.modulus + self.value);
+        assert!(original_value == value + modulus * self.value);
         Self::new(modulus, value)
     }
 

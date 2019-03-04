@@ -420,6 +420,12 @@ impl MyPublicInformation {
             })
     }
 
+    fn knows_dead_card(&self, player: &Player) -> bool {
+            self.hand_info[player].iter().any(|table| {
+                table.probability_is_dead(&self.board) == 1.0
+            })
+    }
+
     fn someone_else_needs_hint(&self, view: &OwnedGameView) -> bool {
         // Does another player have a playable card, but doesn't know it?
         view.get_other_players().iter().any(|player| {
@@ -514,7 +520,7 @@ impl PublicInformation for MyPublicInformation {
 
     fn ask_questions<Callback>(
         &self,
-        _player: &Player,
+        me: &Player,
         hand_info: &mut HandInfo<CardPossibilityTable>,
         mut ask_question: Callback,
         mut info_remaining: u32,
@@ -522,25 +528,21 @@ impl PublicInformation for MyPublicInformation {
         // Changing anything inside this function will not break the information transfer
         // mechanisms!
 
-        let augmented_hand_info = hand_info.iter().cloned().enumerate()
+        let compute_augmented_hand_info = |hand_info: &HandInfo<CardPossibilityTable>| {
+            hand_info.iter().cloned().enumerate()
             .map(|(i, card_table)| {
                 let p_play = card_table.probability_is_playable(&self.board);
                 let p_dead = card_table.probability_is_dead(&self.board);
                 let is_determined = card_table.is_determined();
                 (card_table, i, p_play, p_dead, is_determined)
             })
-            .collect::<Vec<_>>();
+            .collect::<Vec<_>>()
+        };
 
-        let known_playable = augmented_hand_info.iter().filter(|&&(_, _, p_play, _, _)| {
-            p_play == 1.0
-        }).collect::<Vec<_>>().len();
-        let known_dead = augmented_hand_info.iter().filter(|&&(_, _, _, p_dead, _)| {
-            p_dead == 1.0
-        }).collect::<Vec<_>>().len();
-
-        if known_playable == 0 { // TODO: changing this to "if true {" slightly improves the three-player game and
-                                 // very slightly worsens the other cases. There probably is some
-                                 // other way to make this decision that's better in all cases.
+        if !self.knows_playable_card(me) { // TODO: changing this to "if true {" slightly improves the three-player game and
+                                           // very slightly worsens the other cases. There probably is some
+                                           // other way to make this decision that's better in all cases.
+            let augmented_hand_info = compute_augmented_hand_info(hand_info);
             let mut ask_play = augmented_hand_info.iter()
                 .filter(|&&(_, _, p_play, p_dead, is_determined)| {
                     if is_determined { return false; }
@@ -578,7 +580,7 @@ impl PublicInformation for MyPublicInformation {
                                                 // find a playable card, and conditional on that,
                                                 // it's better to find out about as many non-playable
                                                 // cards as possible.
-                if rest_combo.info_amount() < info_remaining && known_dead == 0 {
+                if rest_combo.info_amount() < info_remaining && !self.knows_dead_card(me) {
                     let mut ask_dead = augmented_hand_info.iter()
                         .filter(|&&(_, _, _, p_dead, _)| {
                             p_dead > 0.0 && p_dead < 1.0
@@ -603,6 +605,8 @@ impl PublicInformation for MyPublicInformation {
             }
         }
 
+        // Recompute augmented_hand_info, incorporating the things we learned when asking questions
+        let augmented_hand_info = compute_augmented_hand_info(hand_info);
         let mut ask_partition = augmented_hand_info.iter()
             .filter(|&&(_, _, _, p_dead, is_determined)| {
                 if is_determined { return false }
@@ -883,19 +887,14 @@ impl InformationPlayerStrategy {
             return TurnChoice::Hint(hint);
         }
 
-        // We update on the discard choice before updating on the fact that we're discarding to
-        // match pre-refactor behavior.
-        // TODO: change this in the next commit!
-        let discard_info = if public_useless_indices.len() > 1 {
-            Some(public_info.get_hat_sum(public_useless_indices.len() as u32, view))
-        } else { None };
         if self.last_view.board.hints_remaining > 0 {
             public_info.update_noone_else_needs_hint();
         }
 
         // if anything is totally useless, discard it
         if public_useless_indices.len() > 1 {
-            return TurnChoice::Discard(public_useless_indices[discard_info.unwrap().value as usize]);
+            let info = public_info.get_hat_sum(public_useless_indices.len() as u32, view);
+            return TurnChoice::Discard(public_useless_indices[info.value as usize]);
         } else if useless_indices.len() > 0 {
             // TODO: have opponents infer that i knew a card was useless
             // TODO: after that, potentially prefer useless indices that arent public
@@ -945,16 +944,15 @@ impl InformationPlayerStrategy {
                     &self.last_view.board, &self.public_info.get_player_info(turn_player)
                 );
 
-                // TODO: reorder these blocks in the next commit!
+                if self.last_view.board.hints_remaining > 0 {
+                    self.public_info.update_noone_else_needs_hint();
+                }
                 if known_useless_indices.len() > 1 {
                     // unwrap is safe because *if* a discard happened, and there were known
                     // dead cards, it must be a dead card
                     let value = known_useless_indices.iter().position(|&i| i == *index).unwrap();
                     let info = ModulusInformation::new(known_useless_indices.len() as u32, value as u32);
                     self.public_info.update_from_hat_sum(info, &self.last_view);
-                }
-                if self.last_view.board.hints_remaining > 0 {
-                    self.public_info.update_noone_else_needs_hint();
                 }
             }
             TurnChoice::Play(_index) => {

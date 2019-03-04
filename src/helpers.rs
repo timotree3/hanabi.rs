@@ -246,7 +246,7 @@ impl fmt::Display for SimpleCardInfo {
 // Can represent information of the form:
 // this card is/isn't possible
 // also, maintains integer weights for the cards
-#[derive(Clone,Debug)]
+#[derive(Clone,Debug,Eq,PartialEq)]
 pub struct CardPossibilityTable {
     possible: HashMap<Card, u32>,
 }
@@ -369,7 +369,7 @@ impl fmt::Display for CardPossibilityTable {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone,Eq,PartialEq)]
 pub struct HandInfo<T> where T: CardInfo {
     pub hand_info: Vec<T>
 }

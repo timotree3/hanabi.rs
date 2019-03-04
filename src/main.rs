@@ -12,6 +12,7 @@ mod strategy;
 mod strategies {
     pub mod examples;
     pub mod cheating;
+    mod hat_helpers;
     pub mod information;
 }
 

@@ -19,20 +19,37 @@ impl ModulusInformation {
         Self::new(1, 0)
     }
 
-    pub fn combine(&mut self, other: Self) {
+    pub fn combine(&mut self, other: Self, max_modulus: u32) {
+        assert!(other.modulus <= self.info_remaining(max_modulus));
         self.value = self.value + self.modulus * other.value;
-        self.modulus = self.modulus * other.modulus;
+        self.modulus = std::cmp::min(max_modulus, self.modulus * other.modulus);
+        assert!(self.value < self.modulus);
+    }
+
+    pub fn info_remaining(&self, max_modulus: u32) -> u32 {
+        // We want to find the largest number `result` such that
+        // `self.combine(other, max_modulus)` works whenever `other.modulus == result`.
+        // `other.value` can be up to `result - 1`, so calling combine could increase our value to
+        // up to `self.value + self.modulus * (result - 1)`, which must always be less than
+        // `max_modulus`.
+        // Therefore, we compute the largest number `result` such that
+        // `self.value + self.modulus * (result - 1) < max_modulus`.
+        let result = (max_modulus - self.value - 1) / self.modulus + 1;
+        assert!(self.value + self.modulus * (result - 1) < max_modulus);
+        assert!(self.value + self.modulus * ((result + 1) - 1) >= max_modulus);
+        result
     }
 
     pub fn split(&mut self, modulus: u32) -> Self {
         assert!(self.modulus >= modulus);
-        assert!(self.modulus % modulus == 0);
         let original_modulus = self.modulus;
         let original_value = self.value;
-        self.modulus = self.modulus / modulus;
         let value = self.value % modulus;
         self.value = self.value / modulus;
-        assert!(original_modulus == modulus * self.modulus);
+        // `self.modulus` is the largest number such that
+        // `value + (self.modulus - 1) * modulus < original_modulus`.
+        // TODO: find an explanation of why this makes everything work out
+        self.modulus = (original_modulus - value - 1) / modulus + 1;
         assert!(original_value == value + modulus * self.value);
         Self::new(modulus, value)
     }
@@ -42,11 +59,11 @@ impl ModulusInformation {
         self.modulus = modulus;
     }
 
-    pub fn cast_down(&mut self, modulus: u32) {
-        assert!(self.modulus >= modulus);
-        assert!(self.value < modulus);
-        self.modulus = modulus;
-    }
+    // pub fn cast_down(&mut self, modulus: u32) {
+    //     assert!(self.modulus >= modulus);
+    //     assert!(self.value < modulus);
+    //     self.modulus = modulus;
+    // }
 
     pub fn add(&mut self, other: &Self) {
         assert!(self.modulus == other.modulus);
@@ -127,10 +144,10 @@ pub trait PublicInformation: Clone {
         let mut answer_info = ModulusInformation::none();
         {
             let callback = |hand_info: &mut HandInfo<CardPossibilityTable>, info_remaining: &mut u32, question: Box<Question>| {
-                *info_remaining = *info_remaining / question.info_amount();
                 let new_answer_info = question.answer_info(view.get_hand(player), view.get_board());
                 question.acknowledge_answer_info(new_answer_info.clone(), hand_info, view.get_board());
-                answer_info.combine(new_answer_info);
+                answer_info.combine(new_answer_info, total_info);
+                *info_remaining = answer_info.info_remaining(total_info);
             };
             self.ask_questions(player, hand_info, callback, total_info);
         }
@@ -146,17 +163,15 @@ pub trait PublicInformation: Clone {
         mut info: ModulusInformation,
     ) {
         let total_info = info.modulus;
-        let callback = |hand_info: &mut HandInfo<CardPossibilityTable>, info_remaining: &mut u32, question: Box<Question>| {
-            let q_info_amount = question.info_amount();
-            *info_remaining = *info_remaining / q_info_amount;
-            let info_modulus = info.modulus;
-            // Instead of casting down the ModulusInformation to the product of all the questions before
-            // answering any, we now have to cast down the ModulusInformation question-by-question.
-            info.cast_down((info_modulus / q_info_amount) * q_info_amount);
-            let answer_info = info.split(question.info_amount());
-            question.acknowledge_answer_info(answer_info, hand_info, board);
-        };
-        self.ask_questions(player, hand_info, callback, total_info);
+        {
+            let callback = |hand_info: &mut HandInfo<CardPossibilityTable>, info_remaining: &mut u32, question: Box<Question>| {
+                let answer_info = info.split(question.info_amount());
+                question.acknowledge_answer_info(answer_info, hand_info, board);
+                *info_remaining = info.modulus;
+            };
+            self.ask_questions(player, hand_info, callback, total_info);
+        }
+        assert!(info.value == 0);
     }
 
     /// When deciding on a move, if we can choose between `total_info` choices,

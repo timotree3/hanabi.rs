@@ -722,7 +722,7 @@ impl InformationPlayerStrategy {
 
         // get post-hint hand_info
         let mut hand_info = self.get_player_public_info(hint_player).clone();
-        let total_info  = 3 * (view.board.num_players - 1);
+        let total_info = view.get_other_players().into_iter().map(|player| self.get_info_per_player(player)).sum();
         let questions = Self::get_questions(total_info, view, &hand_info);
         for question in questions {
             let answer = question.answer(hand, view);
@@ -830,7 +830,7 @@ impl InformationPlayerStrategy {
         // TODO: make it so space of hints is larger when there is
         // knowledge about the cards?
 
-        let info_per_player: Vec<Player> = self.get_other_players_starting_after(self.me).iter().map(
+        let info_per_player: Vec<u32> = self.get_other_players_starting_after(self.me).iter().map(
             |player| { self.get_info_per_player(*player)  }
         ).collect();
         let total_info = info_per_player.iter().fold(0, |a, b| a + b);
@@ -922,7 +922,7 @@ impl InformationPlayerStrategy {
     fn infer_from_hint(&mut self, hint: &Hint, result: &Vec<bool>) {
         let hinter = self.last_view.board.player;
 
-        let info_per_player: Vec<Player> = self.get_other_players_starting_after(hinter).iter().map(
+        let info_per_player: Vec<u32> = self.get_other_players_starting_after(hinter).iter().map(
             |player| { self.get_info_per_player(*player)  }
         ).collect();
         let total_info = info_per_player.iter().fold(0, |a, b| a + b);

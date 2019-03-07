@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use fnv::{FnvHashMap, FnvHashSet};
 use std::cmp::Ordering;
 
 use strategy::*;
@@ -185,14 +185,14 @@ impl Question for AdditiveComboQuestion {
 struct CardPossibilityPartition {
     index: usize,
     n_partitions: u32,
-    partition: HashMap<Card, u32>,
+    partition: FnvHashMap<Card, u32>,
 }
 impl CardPossibilityPartition {
     fn new(
         index: usize, max_n_partitions: u32, card_table: &CardPossibilityTable, view: &OwnedGameView
     ) -> CardPossibilityPartition {
         let mut cur_block = 0;
-        let mut partition = HashMap::new();
+        let mut partition = FnvHashMap::default();
         let mut n_partitions = 0;
 
         let has_dead = card_table.probability_is_dead(&view.board) != 0.0;
@@ -288,7 +288,7 @@ impl GameStrategy for InformationStrategy {
             view.board.get_players().map(|player| {
                 let hand_info = HandInfo::new(view.board.hand_size);
                 (player, hand_info)
-            }).collect::<HashMap<_,_>>();
+            }).collect::<FnvHashMap<_,_>>();
 
         Box::new(InformationPlayerStrategy {
             me: player,
@@ -301,7 +301,7 @@ impl GameStrategy for InformationStrategy {
 
 pub struct InformationPlayerStrategy {
     me: Player,
-    public_info: HashMap<Player, HandInfo<CardPossibilityTable>>,
+    public_info: FnvHashMap<Player, HandInfo<CardPossibilityTable>>,
     public_counts: CardCounts, // what any newly drawn card should be
     last_view: OwnedGameView, // the view on the previous turn
 }
@@ -550,8 +550,8 @@ impl InformationPlayerStrategy {
     }
 
     fn find_useless_cards(&self, view: &OwnedGameView, hand: &HandInfo<CardPossibilityTable>) -> Vec<usize> {
-        let mut useless: HashSet<usize> = HashSet::new();
-        let mut seen: HashMap<Card, usize> = HashMap::new();
+        let mut useless: FnvHashSet<usize> = FnvHashSet::default();
+        let mut seen: FnvHashMap<Card, usize> = FnvHashMap::default();
 
         for (i, card_table) in hand.iter().enumerate() {
             if card_table.probability_is_dead(view.get_board()) == 1.0 {
@@ -792,7 +792,7 @@ impl InformationPlayerStrategy {
         (0 .. n - 1).into_iter().map(|i| { (player + 1 + i) % n }).collect()
     }
 
-    fn get_best_hint_of_options(&self, hint_player: Player, hint_option_set: HashSet<Hinted>) -> Hinted {
+    fn get_best_hint_of_options(&self, hint_player: Player, hint_option_set: FnvHashSet<Hinted>) -> Hinted {
         let view = &self.last_view;
 
         // using hint goodness barely helps
@@ -864,7 +864,7 @@ impl InformationPlayerStrategy {
                 2 => {
                     // NOTE: this doesn't do that much better than just hinting
                     // the first thing that doesn't match the hint_card
-                    let mut hint_option_set = HashSet::new();
+                    let mut hint_option_set = FnvHashSet::default();
                     for card in hand {
                         if card.color != hint_card.color {
                             hint_option_set.insert(Hinted::Color(card.color));
@@ -889,7 +889,7 @@ impl InformationPlayerStrategy {
                 }
                 2 => {
                     // Any value hint for a card other than the first
-                    let mut hint_option_set = HashSet::new();
+                    let mut hint_option_set = FnvHashSet::default();
                     for card in hand {
                         if card.value != hint_card.value {
                             hint_option_set.insert(Hinted::Value(card.value));
@@ -899,7 +899,7 @@ impl InformationPlayerStrategy {
                 }
                 3 => {
                     // Any color hint for a card other than the first
-                    let mut hint_option_set = HashSet::new();
+                    let mut hint_option_set = FnvHashSet::default();
                     for card in hand {
                         if card.color != hint_card.color {
                             hint_option_set.insert(Hinted::Color(card.color));

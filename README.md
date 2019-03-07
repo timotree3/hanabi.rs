@@ -55,25 +55,23 @@ Some examples:
 - [A cheating strategy](src/strategies/cheating.rs), using `Rc<RefCell<_>>`
 - [The information strategy](src/strategies/information.rs)!
 
-## Results
-
-On seeds 0-9999, we have these average scores and win rates:
-
-|       |   2p    |   3p    |   4p    |   5p    |
-|-------|---------|---------|---------|---------|
-|cheat  | 24.8600 | 24.9781 | 24.9715 | 24.9570 |
-|       | 90.52 % | 98.12 % | 97.74 % | 96.57 % |
-|info   | 22.3386 | 24.7322 | 24.8921 | 24.8996 |
-|       | 09.86 % | 80.75 % | 91.58 % | 92.11 % |
-
+## Results (auto-generated)
 
 To reproduce:
 ```
-n=10000   # number of rounds to simulate
-t=4       # number of threads
-for strategy in info cheat; do
-  for p in $(seq 2 5); do
-    time cargo run --release -- -n $n -s 0 -t $t -p $p -g $strategy;
-  done
-done
+time cargo run --release -- --results-table
 ```
+
+To update this file:
+```
+time cargo run --release -- --write-results-table
+```
+
+On the first 20000 seeds, we have these average scores and win rates:
+
+|         |   2p    |   3p    |   4p    |   5p    |
+|---------|---------|---------|---------|---------|
+| cheat   | 24.8594 | 24.9785 | 24.9720 | 24.9557 |
+|         | 90.59 % | 98.17 % | 97.76 % | 96.42 % |
+| info    | 22.3249 | 24.7278 | 24.8919 | 24.8961 |
+|         | 09.81 % | 80.54 % | 91.67 % | 91.90 % |

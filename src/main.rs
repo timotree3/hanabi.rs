@@ -162,7 +162,7 @@ fn get_results_table() -> String {
     let strategies = ["cheat", "info"];
     let player_nums = (2..=5).collect::<Vec<_>>();
     let seed = 0;
-    let n_trials = 1;
+    let n_trials = 20000;
     let n_threads = 8;
 
     let intro = format!("On the first {} seeds, we have these average scores and win rates:\n\n", n_trials);

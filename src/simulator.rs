@@ -66,7 +66,7 @@ pub fn simulate_once(
 }
 
 #[derive(Debug)]
-struct Histogram {
+pub struct Histogram {
     pub hist: FnvHashMap<Score, u32>,
     pub sum: Score,
     pub total_count: u32,
@@ -123,7 +123,8 @@ pub fn simulate<T: ?Sized>(
         n_trials: u32,
         n_threads: u32,
         progress_info: Option<u32>,
-    ) where T: GameStrategyConfig + Sync {
+    ) -> SimResult
+    where T: GameStrategyConfig + Sync {
 
     let first_seed = first_seed_opt.unwrap_or_else(|| rand::thread_rng().next_u32());
 
@@ -156,7 +157,7 @@ pub fn simulate<T: ?Sized>(
                     let score = game.score();
                     lives_histogram.insert(game.board.lives_remaining);
                     score_histogram.insert(score);
-                    if score != PERFECT_SCORE { non_perfect_seeds.push((score, seed)); }
+                    if score != PERFECT_SCORE { non_perfect_seeds.push(seed); }
                 }
                 if progress_info.is_some() {
                     info!("Thread {} done", i);
@@ -165,7 +166,7 @@ pub fn simulate<T: ?Sized>(
             }));
         }
 
-        let mut non_perfect_seeds : Vec<(Score,u32)> = Vec::new();
+        let mut non_perfect_seeds : Vec<u32> = Vec::new();
         let mut score_histogram = Histogram::new();
         let mut lives_histogram = Histogram::new();
         for join_handle in join_handles {
@@ -175,17 +176,44 @@ pub fn simulate<T: ?Sized>(
             lives_histogram.merge(thread_lives_histogram);
         }
 
-        info!("Score histogram:\n{}", score_histogram);
-
         non_perfect_seeds.sort();
+        SimResult {
+            scores: score_histogram,
+            lives: lives_histogram,
+            non_perfect_seed: non_perfect_seeds.get(0).cloned(),
+        }
+    })
+}
+
+pub struct SimResult {
+    pub scores: Histogram,
+    pub lives: Histogram,
+    pub non_perfect_seed: Option<u32>,
+}
+
+impl SimResult {
+    pub fn percent_perfect(&self) -> f32 {
+        self.scores.percentage_with(&PERFECT_SCORE) * 100.0
+    }
+
+    pub fn average_score(&self) -> f32 {
+        self.scores.average()
+    }
+
+    pub fn average_lives(&self) -> f32 {
+        self.lives.average()
+    }
+
+    pub fn info(&self) {
+        info!("Score histogram:\n{}", self.scores);
+
         // info!("Seeds with non-perfect score: {:?}", non_perfect_seeds);
-        if non_perfect_seeds.len() > 0 {
-            info!("Example seed with non-perfect score: {}",
-                  non_perfect_seeds.get(0).unwrap().1);
+        if let Some(seed) = self.non_perfect_seed {
+            info!("Example seed with non-perfect score: {}", seed);
         }
 
-        info!("Percentage perfect: {:?}%", score_histogram.percentage_with(&PERFECT_SCORE) * 100.0);
-        info!("Average score: {:?}", score_histogram.average());
-        info!("Average lives: {:?}", lives_histogram.average());
-    })
+        info!("Percentage perfect: {:?}%", self.percent_perfect());
+        info!("Average score: {:?}", self.average_score());
+        info!("Average lives: {:?}", self.average_lives());
+    }
 }

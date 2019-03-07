@@ -65,6 +65,10 @@ fn main() {
                 "STRATEGY");
     opts.optflag("h", "help",
                  "Print this help menu");
+    opts.optflag("", "results-table",
+                 "Print a table of results for each strategy");
+    opts.optflag("", "write-results-table",
+                 "Update the results table in README.md");
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => { m }
         Err(f) => {
@@ -77,6 +81,12 @@ fn main() {
     }
     if !matches.free.is_empty() {
         return print_usage(&program, opts);
+    }
+    if matches.opt_present("write-results-table") {
+        return write_results_table();
+    }
+    if matches.opt_present("results-table") {
+        return print!("{}", get_results_table());
     }
 
     let log_level_str : &str = &matches.opt_str("l").unwrap_or("info".to_string());
@@ -97,15 +107,18 @@ fn main() {
         Box::new(SimpleLogger)
     }).unwrap();
 
-    let n = u32::from_str(&matches.opt_str("n").unwrap_or("1".to_string())).unwrap();
-
+    let n_trials = u32::from_str(&matches.opt_str("n").unwrap_or("1".to_string())).unwrap();
     let seed = matches.opt_str("s").map(|seed_str| { u32::from_str(&seed_str).unwrap() });
-
     let progress_info = matches.opt_str("o").map(|freq_str| { u32::from_str(&freq_str).unwrap() });
-
     let n_threads = u32::from_str(&matches.opt_str("t").unwrap_or("1".to_string())).unwrap();
-
     let n_players = u32::from_str(&matches.opt_str("p").unwrap_or("4".to_string())).unwrap();
+    let strategy_str : &str = &matches.opt_str("g").unwrap_or("cheat".to_string());
+
+    sim_games(n_players, strategy_str, seed, n_trials, n_threads, progress_info).info();
+}
+
+fn sim_games(n_players: u32, strategy_str: &str, seed: Option<u32>, n_trials: u32, n_threads: u32, progress_info: Option<u32>)
+    -> simulator::SimResult {
     let hand_size = match n_players {
         2 => 5,
         3 => 5,
@@ -123,7 +136,6 @@ fn main() {
         allow_empty_hints: false,
     };
 
-    let strategy_str : &str = &matches.opt_str("g").unwrap_or("cheat".to_string());
     let strategy_config : Box<strategy::GameStrategyConfig + Sync> = match strategy_str {
         "random" => {
             Box::new(strategies::examples::RandomStrategyConfig {
@@ -140,9 +152,75 @@ fn main() {
                 as Box<strategy::GameStrategyConfig + Sync>
         },
         _ => {
-            print_usage(&program, opts);
             panic!("Unexpected strategy argument {}", strategy_str);
         },
     };
-    simulator::simulate(&game_opts, strategy_config, seed, n, n_threads, progress_info);
+    simulator::simulate(&game_opts, strategy_config, seed, n_trials, n_threads, progress_info)
+}
+
+fn get_results_table() -> String {
+    let strategies = ["cheat", "info"];
+    let player_nums = (2..=5).collect::<Vec<_>>();
+    let seed = 0;
+    let n_trials = 1;
+    let n_threads = 8;
+
+    let intro = format!("On the first {} seeds, we have these average scores and win rates:\n\n", n_trials);
+    let format_name    = |x|  format!(" {:7} ",      x);
+    let format_players = |x|  format!("   {}p    ",  x);
+    let format_percent = |x|  format!(" {:05.2} % ", x);
+    let format_score   = |x|  format!(" {:07.4} ",   x);
+    let space          = String::from("         ");
+    let dashes         = String::from("---------");
+    type TwoLines = (String, String);
+    fn make_twolines(player_nums: &Vec<u32>, head: TwoLines, make_block: &dyn Fn(u32) -> TwoLines) -> TwoLines {
+        let mut blocks = player_nums.iter().cloned().map(make_block).collect::<Vec<_>>();
+        blocks.insert(0, head);
+        fn combine(items: Vec<String>) -> String {
+            items.iter().fold(String::from("|"), |init, next| { init + next + "|" })
+        }
+        let (a, b): (Vec<_>, Vec<_>) = blocks.into_iter().unzip();
+        (combine(a), combine(b))
+    }
+    fn concat_twolines(body: Vec<TwoLines>) -> String {
+        body.into_iter().fold(String::default(), |output, (a, b)| (output + &a + "\n" + &b + "\n"))
+    }
+    let header = make_twolines(&player_nums, (space.clone(), dashes.clone()), &|n_players| (format_players(n_players), dashes.clone()));
+    let mut body = strategies.iter().map(|strategy| {
+        make_twolines(&player_nums, (format_name(strategy), space.clone()), &|n_players| {
+            let simresult = sim_games(n_players, strategy, Some(seed), n_trials, n_threads, None);
+            (format_score(simresult.average_score()), format_percent(simresult.percent_perfect()))
+        })
+    }).collect::<Vec<_>>();
+    body.insert(0, header);
+    intro + &concat_twolines(body)
+}
+
+fn write_results_table() {
+    let separator = r#"
+## Results (auto-generated)
+
+To reproduce:
+```
+time cargo run --release -- --results-table
+```
+
+To update this file:
+```
+time cargo run --release -- --write-results-table
+```
+
+"#;
+    let readme = "README.md";
+    let readme_contents = std::fs::read_to_string(readme).unwrap();
+    let readme_init = {
+        let parts = readme_contents.splitn(2, separator).collect::<Vec<_>>();
+        if parts.len() != 2 {
+            panic!("{} has been modified in the Results section!", readme);
+        }
+        parts[0]
+    };
+    let table = get_results_table();
+    let new_readme_contents = String::from(readme_init) + separator + &table;
+    std::fs::write(readme, new_readme_contents).unwrap();
 }

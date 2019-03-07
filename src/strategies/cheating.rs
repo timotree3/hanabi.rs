@@ -1,6 +1,6 @@
 use std::rc::Rc;
 use std::cell::{RefCell};
-use std::collections::{HashMap, HashSet};
+use fnv::{FnvHashMap, FnvHashSet};
 
 use strategy::*;
 use game::*;
@@ -31,13 +31,13 @@ impl GameStrategyConfig for CheatingStrategyConfig {
 }
 
 pub struct CheatingStrategy {
-    player_hands_cheat: Rc<RefCell<HashMap<Player, Cards>>>,
+    player_hands_cheat: Rc<RefCell<FnvHashMap<Player, Cards>>>,
 }
 
 impl CheatingStrategy {
     pub fn new() -> CheatingStrategy {
         CheatingStrategy {
-            player_hands_cheat: Rc::new(RefCell::new(HashMap::new())),
+            player_hands_cheat: Rc::new(RefCell::new(FnvHashMap::default())),
         }
     }
 }
@@ -56,7 +56,7 @@ impl GameStrategy for CheatingStrategy {
 }
 
 pub struct CheatingPlayerStrategy {
-    player_hands_cheat: Rc<RefCell<HashMap<Player, Cards>>>,
+    player_hands_cheat: Rc<RefCell<FnvHashMap<Player, Cards>>>,
     me: Player,
 }
 impl CheatingPlayerStrategy {
@@ -120,7 +120,7 @@ impl CheatingPlayerStrategy {
     }
 
     fn find_useless_card(&self, view: &BorrowedGameView, hand: &Cards) -> Option<usize> {
-        let mut set: HashSet<Card> = HashSet::new();
+        let mut set: FnvHashSet<Card> = FnvHashSet::default();
 
         for (i, card) in hand.iter().enumerate() {
             if view.board.is_dead(card) {

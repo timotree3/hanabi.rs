@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use fnv::FnvHashMap;
 use std::fmt;
 use std::ops::Range;
 
@@ -46,11 +46,11 @@ impl fmt::Debug for Card {
 
 #[derive(Debug,Clone)]
 pub struct CardCounts {
-    counts: HashMap<Card, u32>,
+    counts: FnvHashMap<Card, u32>,
 }
 impl CardCounts {
     pub fn new() -> CardCounts {
-        let mut counts = HashMap::new();
+        let mut counts = FnvHashMap::default();
         for &color in COLORS.iter() {
             for &value in VALUES.iter() {
                 counts.insert(Card::new(color, value), 0);
@@ -248,7 +248,7 @@ pub struct BoardState {
     pub deck_size: u32,
     pub total_cards: u32,
     pub discard: Discard,
-    pub fireworks: HashMap<Color, Firework>,
+    pub fireworks: FnvHashMap<Color, Firework>,
 
     pub num_players: u32,
 
@@ -271,7 +271,7 @@ impl BoardState {
     pub fn new(opts: &GameOptions, deck_size: u32) -> BoardState {
         let fireworks = COLORS.iter().map(|&color| {
             (color, Firework::new(color))
-        }).collect::<HashMap<_, _>>();
+        }).collect::<FnvHashMap<_, _>>();
 
         BoardState {
             deck_size: deck_size,
@@ -479,7 +479,7 @@ pub struct BorrowedGameView<'a> {
     pub player: Player,
     pub hand_size: usize,
     // the cards of the other players, as well as the information they have
-    pub other_hands: HashMap<Player, &'a Cards>,
+    pub other_hands: FnvHashMap<Player, &'a Cards>,
     // board state
     pub board: &'a BoardState,
 }
@@ -506,7 +506,7 @@ pub struct OwnedGameView {
     pub player: Player,
     pub hand_size: usize,
     // the cards of the other players, as well as the information they have
-    pub other_hands: HashMap<Player, Cards>,
+    pub other_hands: FnvHashMap<Player, Cards>,
     // board state
     pub board: BoardState,
 }
@@ -515,7 +515,7 @@ impl OwnedGameView {
         let other_hands = borrowed_view.other_hands.iter()
             .map(|(&other_player, &player_state)| {
                 (other_player, player_state.clone())
-            }).collect::<HashMap<_, _>>();
+            }).collect::<FnvHashMap<_, _>>();
 
         OwnedGameView {
             player: borrowed_view.player.clone(),
@@ -544,7 +544,7 @@ impl GameView for OwnedGameView {
 // complete game state (known to nobody!)
 #[derive(Debug)]
 pub struct GameState {
-    pub hands: HashMap<Player, Cards>,
+    pub hands: FnvHashMap<Player, Cards>,
     pub board: BoardState,
     pub deck: Cards,
 }
@@ -582,7 +582,7 @@ impl GameState {
                     deck.pop().unwrap()
                 }).collect::<Vec<_>>();
                 (player, hand)
-            }).collect::<HashMap<_, _>>();
+            }).collect::<FnvHashMap<_, _>>();
 
         GameState {
             hands: hands,
@@ -605,7 +605,7 @@ impl GameState {
 
     // get the game state view of a particular player
     pub fn get_view(&self, player: Player) -> BorrowedGameView {
-        let mut other_hands = HashMap::new();
+        let mut other_hands = FnvHashMap::default();
         for (&other_player, hand) in &self.hands {
             if player != other_player {
                 other_hands.insert(other_player, hand);

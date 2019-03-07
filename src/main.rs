@@ -3,6 +3,7 @@ extern crate getopts;
 extern crate log;
 extern crate rand;
 extern crate crossbeam;
+extern crate fnv;
 
 mod helpers;
 mod game;

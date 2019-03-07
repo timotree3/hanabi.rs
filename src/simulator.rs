@@ -1,5 +1,5 @@
 use rand::{self, Rng, SeedableRng};
-use std::collections::HashMap;
+use fnv::FnvHashMap;
 use std::fmt;
 use crossbeam;
 
@@ -25,17 +25,15 @@ fn new_deck(seed: u32) -> Cards {
 pub fn simulate_once(
         opts: &GameOptions,
         game_strategy: Box<GameStrategy>,
-        seed_opt: Option<u32>,
+        seed: u32,
     ) -> GameState {
-
-    let seed = seed_opt.unwrap_or(rand::thread_rng().next_u32());
     let deck = new_deck(seed);
 
     let mut game = GameState::new(opts, deck);
 
     let mut strategies = game.get_players().map(|player| {
         (player, game_strategy.initialize(player, &game.get_view(player)))
-    }).collect::<HashMap<Player, Box<PlayerStrategy>>>();
+    }).collect::<FnvHashMap<Player, Box<PlayerStrategy>>>();
 
     while !game.is_over() {
         let player = game.board.player;
@@ -69,14 +67,14 @@ pub fn simulate_once(
 
 #[derive(Debug)]
 struct Histogram {
-    pub hist: HashMap<Score, u32>,
+    pub hist: FnvHashMap<Score, u32>,
     pub sum: Score,
     pub total_count: u32,
 }
 impl Histogram {
     pub fn new() -> Histogram {
         Histogram {
-            hist: HashMap::new(),
+            hist: FnvHashMap::default(),
             sum: 0,
             total_count: 0,
         }
@@ -127,7 +125,7 @@ pub fn simulate<T: ?Sized>(
         progress_info: Option<u32>,
     ) where T: GameStrategyConfig + Sync {
 
-    let first_seed = first_seed_opt.unwrap_or(rand::thread_rng().next_u32());
+    let first_seed = first_seed_opt.unwrap_or_else(|| rand::thread_rng().next_u32());
 
     let strat_config_ref = &strat_config;
     crossbeam::scope(|scope| {
@@ -154,7 +152,7 @@ pub fn simulate<T: ?Sized>(
                             );
                         }
                     }
-                    let game = simulate_once(&opts, strat_config_ref.initialize(&opts), Some(seed));
+                    let game = simulate_once(&opts, strat_config_ref.initialize(&opts), seed);
                     let score = game.score();
                     lives_histogram.insert(game.board.lives_remaining);
                     score_histogram.insert(score);

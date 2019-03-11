@@ -165,11 +165,11 @@ fn get_results_table() -> String {
     let n_trials = 20000;
     let n_threads = 8;
 
-    let intro = format!("On the first {} seeds, we have these average scores and win rates:\n\n", n_trials);
+    let intro = format!("On the first {} seeds, we have these scores and win rates (average ± standard error):\n\n", n_trials);
     let format_name    = |x|         format!(" {:7} ",      x);
-    let format_players = |x|         format!("     {}p  (stderr) ",  x);
-    let format_percent = |x, stderr| format!(" {:05.2} % ({:.2} %) ", x, stderr);
-    let format_score   = |x, stderr| format!(" {:07.4} ({:.4}) ", x, stderr);
+    let format_players = |x|         format!("   {}p    ",  x);
+    let format_percent = |x, stderr| format!(" {:05.2} ± {:.2} % ", x, stderr);
+    let format_score   = |x, stderr| format!(" {:07.4} ± {:.4} ", x, stderr);
     let space          =        String::from("         ");
     let dashes         =        String::from("---------");
     let dashes_long    =        String::from("------------------");

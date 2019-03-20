@@ -44,7 +44,7 @@ impl fmt::Debug for Card {
     }
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug,Clone,Eq,PartialEq)]
 pub struct CardCounts {
     counts: FnvHashMap<Card, u32>,
 }
@@ -99,7 +99,7 @@ impl fmt::Display for CardCounts {
 
 pub type Cards = Vec<Card>;
 
-#[derive(Debug,Clone)]
+#[derive(Debug,Clone,Eq,PartialEq)]
 pub struct Discard {
     pub cards: Cards,
     counts: CardCounts,
@@ -137,7 +137,7 @@ impl fmt::Display for Discard {
 pub type Score = u32;
 pub const PERFECT_SCORE: Score = (NUM_COLORS * NUM_VALUES) as u32;
 
-#[derive(Debug,Clone)]
+#[derive(Debug,Clone,Eq,PartialEq)]
 pub struct Firework {
     pub color: Color,
     pub top: Value,
@@ -198,14 +198,14 @@ impl fmt::Display for Hinted {
     }
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug,Clone,Eq,PartialEq)]
 pub struct Hint {
     pub player: Player,
     pub hinted: Hinted,
 }
 
 // represents the choice a player made in a given turn
-#[derive(Debug,Clone)]
+#[derive(Debug,Clone,Eq,PartialEq)]
 pub enum TurnChoice {
     Hint(Hint),
     Discard(usize), // index of card to discard
@@ -213,7 +213,7 @@ pub enum TurnChoice {
 }
 
 // represents what happened in a turn
-#[derive(Debug,Clone)]
+#[derive(Debug,Clone,Eq,PartialEq)]
 pub enum TurnResult {
     Hint(Vec<bool>),  // vector of whether each was in the hint
     Discard(Card),    // card discarded
@@ -221,7 +221,7 @@ pub enum TurnResult {
 }
 
 // represents a turn taken in the game
-#[derive(Debug,Clone)]
+#[derive(Debug,Clone,Eq,PartialEq)]
 pub struct TurnRecord {
     pub player: Player,
     pub choice: TurnChoice,
@@ -243,7 +243,7 @@ pub struct GameOptions {
 
 // State of everything except the player's hands
 // Is all completely common knowledge
-#[derive(Debug,Clone)]
+#[derive(Debug,Clone,Eq,PartialEq)]
 pub struct BoardState {
     pub deck_size: u32,
     pub total_cards: u32,

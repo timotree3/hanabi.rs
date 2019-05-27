@@ -7,13 +7,15 @@ This project provides a framework for implementing Hanabi strategies in Rust.
 It also explores some implementations, based on ideas from
 [this paper](https://d0474d97-a-62cb3a1a-s-sites.googlegroups.com/site/rmgpgrwc/research-papers/Hanabi_final.pdf).
 In particular, it contains an improved version of their "information strategy",
-which achieves the best results I'm aware of for games with more than 2 players ([see below](#results)).
+which achieves state-of-the-art results for games with more than 2 players ([see below](#results)).
 
 Please feel free to contact me about Hanabi strategies, or this framework.
 
 Most similar projects I am aware of:
 - https://github.com/rjtobin/HanSim (written for the paper mentioned above)
 - https://github.com/Quuxplusone/Hanabi
+
+This repository has been cited in [this paper](https://arxiv.org/abs/1902.00506) from DeepMind and Google Brain, and is briefly discussed in [this article](https://www.wsj.com/articles/why-the-card-game-hanabi-is-the-next-big-hurdle-for-artificial-intelligence-11553875351) from the Wall Street Journal!
 
 ## Setup
 

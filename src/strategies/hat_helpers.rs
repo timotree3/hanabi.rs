@@ -130,14 +130,14 @@ pub trait PublicInformation: Clone {
         player: &Player,
         board: &HandInfo<CardPossibilityTable>,
         total_info: u32,
-    ) -> Option<Box<Question>>;
+    ) -> Option<Box<dyn Question>>;
 
     fn ask_question_wrapper(
         &self,
         player: &Player,
         hand_info: &HandInfo<CardPossibilityTable>,
         total_info: u32,
-    ) -> Option<Box<Question>> {
+    ) -> Option<Box<dyn Question>> {
         assert!(total_info > 0);
         if total_info == 1 {
             None

@@ -378,7 +378,7 @@ impl BoardState {
     }
 
     pub fn get_players(&self) -> Range<Player> {
-        (0..self.num_players)
+        0..self.num_players
     }
 
     pub fn score(&self) -> Score {

@@ -89,7 +89,7 @@ fn main() {
         Ok(m) => m,
         Err(f) => {
             print_usage(&program, opts);
-            panic!(f.to_string())
+            panic!("{}", f.to_string())
         }
     };
     if matches.opt_present("h") {
@@ -173,15 +173,15 @@ fn sim_games(
         allow_empty_hints: false,
     };
 
-    let strategy_config: Box<strategy::GameStrategyConfig + Sync> = match strategy_str {
+    let strategy_config: Box<dyn strategy::GameStrategyConfig + Sync> = match strategy_str {
         "random" => Box::new(strategies::examples::RandomStrategyConfig {
             hint_probability: 0.4,
             play_probability: 0.2,
-        }) as Box<strategy::GameStrategyConfig + Sync>,
+        }) as Box<dyn strategy::GameStrategyConfig + Sync>,
         "cheat" => Box::new(strategies::cheating::CheatingStrategyConfig::new())
-            as Box<strategy::GameStrategyConfig + Sync>,
+            as Box<dyn strategy::GameStrategyConfig + Sync>,
         "info" => Box::new(strategies::information::InformationStrategyConfig::new())
-            as Box<strategy::GameStrategyConfig + Sync>,
+            as Box<dyn strategy::GameStrategyConfig + Sync>,
         _ => {
             panic!("Unexpected strategy argument {}", strategy_str);
         }
@@ -236,7 +236,7 @@ fn get_results_table() -> String {
     }
     fn concat_twolines(body: Vec<TwoLines>) -> String {
         body.into_iter().fold(String::default(), |output, (a, b)| {
-            (output + &a + "\n" + &b + "\n")
+            output + &a + "\n" + &b + "\n"
         })
     }
     let header = make_twolines(

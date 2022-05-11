@@ -22,7 +22,7 @@ fn new_deck(seed: u32) -> Cards {
     deck
 }
 
-pub fn simulate_once(opts: &GameOptions, game_strategy: Box<GameStrategy>, seed: u32) -> GameState {
+pub fn simulate_once(opts: &GameOptions, game_strategy: Box<dyn GameStrategy>, seed: u32) -> GameState {
     let deck = new_deck(seed);
 
     let mut game = GameState::new(opts, deck);
@@ -35,7 +35,7 @@ pub fn simulate_once(opts: &GameOptions, game_strategy: Box<GameStrategy>, seed:
                 game_strategy.initialize(player, &game.get_view(player)),
             )
         })
-        .collect::<FnvHashMap<Player, Box<PlayerStrategy>>>();
+        .collect::<FnvHashMap<Player, Box<dyn PlayerStrategy>>>();
 
     while !game.is_over() {
         let player = game.board.player;
@@ -47,14 +47,14 @@ pub fn simulate_once(opts: &GameOptions, game_strategy: Box<GameStrategy>, seed:
         debug!("{}", game);
 
         let choice = {
-            let mut strategy = strategies.get_mut(&player).unwrap();
+            let strategy = strategies.get_mut(&player).unwrap();
             strategy.decide(&game.get_view(player))
         };
 
         let turn = game.process_choice(choice);
 
         for player in game.get_players() {
-            let mut strategy = strategies.get_mut(&player).unwrap();
+            let strategy = strategies.get_mut(&player).unwrap();
             strategy.update(&turn, &game.get_view(player));
         }
     }

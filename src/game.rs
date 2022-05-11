@@ -338,25 +338,14 @@ impl BoardState {
     // is never going to play, based on discard + fireworks
     pub fn is_dead(&self, card: &Card) -> bool {
         let firework = self.fireworks.get(&card.color).unwrap();
-        if firework.complete() {
-            true
-        } else {
-            let needed = firework.needed_value().unwrap();
-            if card.value < needed {
-                true
-            } else {
-                card.value > self.highest_attainable(card.color)
-            }
-        }
+        firework.complete()
+            || card.value < firework.needed_value().unwrap()
+            || card.value > self.highest_attainable(card.color)
     }
 
     // can be discarded without necessarily sacrificing score, based on discard + fireworks
     pub fn is_dispensable(&self, card: &Card) -> bool {
-        let firework = self.fireworks.get(&card.color).unwrap();
-        firework.complete()
-            || card.value < firework.needed_value().unwrap()
-            || card.value > self.highest_attainable(card.color)
-            || self.discard.remaining(card) != 1
+        self.is_dead(card) || self.discard.remaining(card) != 1
     }
 
     pub fn get_players(&self) -> Range<Player> {

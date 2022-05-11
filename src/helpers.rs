@@ -1,7 +1,7 @@
 use std::cmp::Eq;
 use std::collections::{HashMap, HashSet};
 use std::convert::From;
-use std::fmt;
+use std::fmt::{self, Write};
 use std::hash::Hash;
 use std::ops::{Index, IndexMut};
 use std::slice;
@@ -268,7 +268,7 @@ impl fmt::Display for SimpleCardInfo {
         //}
         for &value in &VALUES {
             if self.value_info.is_possible(value) {
-                string.push_str(&format!("{}", value));
+                write!(string, "{}", value).unwrap();
             }
         }
         f.pad(&string)
@@ -401,7 +401,7 @@ impl CardInfo for CardPossibilityTable {
 impl fmt::Display for CardPossibilityTable {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for (card, weight) in &self.possible {
-            (f.write_str(&format!("{} {}, ", weight, card)))?;
+            write!(f, "{} {}, ", weight, card)?;
         }
         Ok(())
     }

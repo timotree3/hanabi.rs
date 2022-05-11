@@ -78,16 +78,16 @@ impl CardCounts {
 impl fmt::Display for CardCounts {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for &color in COLORS.iter() {
-            (f.write_str(&format!("{}: ", color,)))?;
+            write!(f, "{}: ", color,)?;
             for &value in VALUES.iter() {
                 let count = self.get_count(&Card::new(color, value));
                 let total = get_count_for_value(value);
-                (f.write_str(&format!("{}/{} {}s", count, total, value)))?;
+                write!(f, "{}/{} {}s", count, total, value)?;
                 if value != FINAL_VALUE {
-                    (f.write_str(", "))?;
+                    f.write_str(", ")?;
                 }
             }
-            (f.write_str("\n"))?;
+            f.write_str("\n")?;
         }
         Ok(())
     }
@@ -123,9 +123,7 @@ impl Discard {
 }
 impl fmt::Display for Discard {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // try!(f.write_str(&format!(
-        //     "{}", self.cards,
-        // )));
+        // write!(f, "{}", self.cards)?;
         write!(f, "{}", self.counts)
     }
 }
@@ -390,35 +388,35 @@ impl BoardState {
 impl fmt::Display for BoardState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.is_over() {
-            (f.write_str(&format!("Turn {} (GAME ENDED):\n", self.turn)))?;
+            writeln!(f, "Turn {} (GAME ENDED):", self.turn)?;
         } else {
-            (f.write_str(&format!(
-                "Turn {} (Player {}'s turn):\n",
-                self.turn, self.player
-            )))?;
+            writeln!(f, "Turn {} (Player {}'s turn):", self.turn, self.player)?;
         }
 
-        (f.write_str(&format!("{} cards remaining in deck\n", self.deck_size)))?;
+        writeln!(f, "{} cards remaining in deck", self.deck_size)?;
         if self.deck_size == 0 {
-            (f.write_str(&format!(
-                "Deck is empty.  {} turns remaining in game\n",
+            writeln!(
+                f,
+                "Deck is empty.  {} turns remaining in game",
                 self.deckless_turns_remaining
-            )))?;
+            )?;
         }
-        (f.write_str(&format!(
-            "{}/{} hints remaining\n",
+        writeln!(
+            f,
+            "{}/{} hints remaining",
             self.hints_remaining, self.hints_total
-        )))?;
-        (f.write_str(&format!(
-            "{}/{} lives remaining\n",
+        )?;
+        writeln!(
+            f,
+            "{}/{} lives remaining",
             self.lives_remaining, self.lives_total
-        )))?;
-        (f.write_str("Fireworks:\n"))?;
+        )?;
+        f.write_str("Fireworks:\n")?;
         for &color in COLORS.iter() {
-            (f.write_str(&format!("  {}\n", self.get_firework(color))))?;
+            writeln!(f, "  {}", self.get_firework(color))?;
         }
-        (f.write_str("Discard:\n"))?;
-        (f.write_str(&format!("{}\n", self.discard)))?;
+        f.write_str("Discard:\n")?;
+        writeln!(f, "{}\n", self.discard)?;
 
         Ok(())
     }
@@ -547,22 +545,22 @@ pub struct GameState {
 }
 impl fmt::Display for GameState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        (f.write_str("\n"))?;
-        (f.write_str("======\n"))?;
-        (f.write_str("Hands:\n"))?;
-        (f.write_str("======\n"))?;
+        f.write_str("\n")?;
+        f.write_str("======\n")?;
+        f.write_str("Hands:\n")?;
+        f.write_str("======\n")?;
         for player in self.board.get_players() {
             let hand = &self.hands.get(&player).unwrap();
-            (f.write_str(&format!("player {}:", player)))?;
+            write!(f, "player {}:", player)?;
             for card in hand.iter() {
-                (f.write_str(&format!("    {}", card)))?;
+                write!(f, "    {}", card)?;
             }
-            (f.write_str("\n"))?;
+            f.write_str("\n")?;
         }
-        (f.write_str("======\n"))?;
-        (f.write_str("Board:\n"))?;
-        (f.write_str("======\n"))?;
-        (f.write_str(&format!("{}", self.board)))?;
+        f.write_str("======\n")?;
+        f.write_str("Board:\n")?;
+        f.write_str("======\n")?;
+        write!(f, "{}", self.board)?;
         Ok(())
     }
 }

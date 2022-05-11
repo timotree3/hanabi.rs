@@ -577,13 +577,7 @@ impl PublicInformation for MyPublicInformation {
         // We don't need to find out anything about cards that are determined or dead.
         let augmented_hand_info = augmented_hand_info_raw
             .into_iter()
-            .filter(|&(i, _, p_dead)| {
-                if p_dead == 1.0 {
-                    false
-                } else {
-                    !hand_info[i].is_determined()
-                }
-            })
+            .filter(|&(i, _, p_dead)| p_dead != 1.0 && !hand_info[i].is_determined())
             .collect::<Vec<_>>();
 
         if !know_playable_card {
@@ -902,10 +896,9 @@ impl InformationPlayerStrategy {
             true
         } else if view.board.discard_size() <= discard_threshold && !useless_indices.is_empty() {
             false
-        }
         // hinting is better than discarding dead cards
         // (probably because it stalls the deck-drawing).
-        else if view.board.hints_remaining > 0 && view.someone_else_can_play() {
+        } else if view.board.hints_remaining > 0 && view.someone_else_can_play() {
             true
         } else {
             // this being false is the only case in which we discard a potentially useful card.

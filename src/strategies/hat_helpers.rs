@@ -9,10 +9,7 @@ pub struct ModulusInformation {
 impl ModulusInformation {
     pub fn new(modulus: u32, value: u32) -> Self {
         assert!(value < modulus);
-        ModulusInformation {
-            modulus: modulus,
-            value: value,
-        }
+        ModulusInformation { modulus, value }
     }
 
     pub fn none() -> Self {
@@ -21,7 +18,7 @@ impl ModulusInformation {
 
     pub fn combine(&mut self, other: Self, max_modulus: u32) {
         assert!(other.modulus <= self.info_remaining(max_modulus));
-        self.value = self.value + self.modulus * other.value;
+        self.value += self.modulus * other.value;
         self.modulus = std::cmp::min(max_modulus, self.modulus * other.modulus);
         assert!(self.value < self.modulus);
     }
@@ -45,7 +42,7 @@ impl ModulusInformation {
         let original_modulus = self.modulus;
         let original_value = self.value;
         let value = self.value % modulus;
-        self.value = self.value / modulus;
+        self.value /= modulus;
         // `self.modulus` is the largest number such that
         // `value + (self.modulus - 1) * modulus < original_modulus`.
         // TODO: find an explanation of why this makes everything work out
@@ -210,7 +207,7 @@ pub trait PublicInformation: Clone {
             .map(|player| {
                 let mut hand_info = self.get_player_info(player);
                 let info = self.get_hat_info_for_player(player, &mut hand_info, total_info, view);
-                (info, (player.clone(), hand_info))
+                (info, (*player, hand_info))
             })
             .unzip();
         self.set_player_infos(new_player_hands);
@@ -236,7 +233,7 @@ pub trait PublicInformation: Clone {
                 let mut hand_info = self.get_player_info(&player);
                 let player_info =
                     self.get_hat_info_for_player(&player, &mut hand_info, info.modulus, view);
-                (player_info, (player.clone(), hand_info))
+                (player_info, (player, hand_info))
             })
             .unzip();
         for other_info in other_infos {
@@ -256,7 +253,7 @@ pub trait PublicInformation: Clone {
     fn get_private_info(&self, view: &OwnedGameView) -> HandInfo<CardPossibilityTable> {
         let mut info = self.get_player_info(&view.player);
         for card_table in info.iter_mut() {
-            for (_, hand) in &view.other_hands {
+            for hand in view.other_hands.values() {
                 for card in hand {
                     card_table.decrement_weight_if_possible(card);
                 }

@@ -1,4 +1,3 @@
-use crossbeam;
 use fnv::FnvHashMap;
 use rand::{self, Rng, SeedableRng};
 use std::fmt;
@@ -22,7 +21,11 @@ fn new_deck(seed: u32) -> Cards {
     deck
 }
 
-pub fn simulate_once(opts: &GameOptions, game_strategy: Box<dyn GameStrategy>, seed: u32) -> GameState {
+pub fn simulate_once(
+    opts: &GameOptions,
+    game_strategy: Box<dyn GameStrategy>,
+    seed: u32,
+) -> GameState {
     let deck = new_deck(seed);
 
     let mut game = GameState::new(opts, deck);
@@ -89,7 +92,7 @@ impl Histogram {
         self.insert_many(val, 1);
     }
     pub fn get_count(&self, val: &Score) -> u32 {
-        *self.hist.get(&val).unwrap_or(&0)
+        *self.hist.get(val).unwrap_or(&0)
     }
     pub fn percentage_with(&self, val: &Score) -> f32 {
         self.get_count(val) as f32 / self.total_count as f32
@@ -119,7 +122,7 @@ impl fmt::Display for Histogram {
         let mut keys = self.hist.keys().collect::<Vec<_>>();
         keys.sort();
         for val in keys {
-            r#try!(f.write_str(&format!("\n{}: {}", val, self.get_count(val),)));
+            (f.write_str(&format!("\n{}: {}", val, self.get_count(val),)))?;
         }
         Ok(())
     }
@@ -166,7 +169,7 @@ where
                             );
                         }
                     }
-                    let game = simulate_once(&opts, strat_config_ref.initialize(&opts), seed);
+                    let game = simulate_once(opts, strat_config_ref.initialize(opts), seed);
                     let score = game.score();
                     lives_histogram.insert(game.board.lives_remaining);
                     score_histogram.insert(score);
@@ -192,7 +195,7 @@ where
             lives_histogram.merge(thread_lives_histogram);
         }
 
-        non_perfect_seeds.sort();
+        non_perfect_seeds.sort_unstable();
         SimResult {
             scores: score_histogram,
             lives: lives_histogram,

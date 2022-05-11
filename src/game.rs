@@ -32,10 +32,7 @@ pub struct Card {
 }
 impl Card {
     pub fn new(color: Color, value: Value) -> Card {
-        Card {
-            color: color,
-            value: value,
-        }
+        Card { color, value }
     }
 }
 impl fmt::Display for Card {
@@ -61,7 +58,7 @@ impl CardCounts {
                 counts.insert(Card::new(color, value), 0);
             }
         }
-        CardCounts { counts: counts }
+        CardCounts { counts }
     }
 
     pub fn get_count(&self, card: &Card) -> u32 {
@@ -81,16 +78,16 @@ impl CardCounts {
 impl fmt::Display for CardCounts {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for &color in COLORS.iter() {
-            r#try!(f.write_str(&format!("{}: ", color,)));
+            (f.write_str(&format!("{}: ", color,)))?;
             for &value in VALUES.iter() {
                 let count = self.get_count(&Card::new(color, value));
                 let total = get_count_for_value(value);
-                r#try!(f.write_str(&format!("{}/{} {}s", count, total, value)));
+                (f.write_str(&format!("{}/{} {}s", count, total, value)))?;
                 if value != FINAL_VALUE {
-                    r#try!(f.write_str(", "));
+                    (f.write_str(", "))?;
                 }
             }
-            r#try!(f.write_str("\n"));
+            (f.write_str("\n"))?;
         }
         Ok(())
     }
@@ -143,10 +140,7 @@ pub struct Firework {
 }
 impl Firework {
     pub fn new(color: Color) -> Firework {
-        Firework {
-            color: color,
-            top: 0,
-        }
+        Firework { color, top: 0 }
     }
 
     pub fn needed_value(&self) -> Option<Value> {
@@ -194,11 +188,11 @@ pub enum Hinted {
 }
 impl fmt::Display for Hinted {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &Hinted::Color(color) => {
+        match *self {
+            Hinted::Color(color) => {
                 write!(f, "{}", color)
             }
-            &Hinted::Value(value) => {
+            Hinted::Value(value) => {
                 write!(f, "{}", value)
             }
         }
@@ -282,9 +276,9 @@ impl BoardState {
             .collect::<FnvHashMap<_, _>>();
 
         BoardState {
-            deck_size: deck_size,
+            deck_size,
             total_cards: deck_size,
-            fireworks: fireworks,
+            fireworks,
             discard: Discard::new(),
             num_players: opts.num_players,
             hand_size: opts.hand_size,
@@ -340,7 +334,7 @@ impl BoardState {
                 return value - 1;
             }
         }
-        return FINAL_VALUE;
+        FINAL_VALUE
     }
 
     // is never going to play, based on discard + fireworks
@@ -361,20 +355,10 @@ impl BoardState {
     // can be discarded without necessarily sacrificing score, based on discard + fireworks
     pub fn is_dispensable(&self, card: &Card) -> bool {
         let firework = self.fireworks.get(&card.color).unwrap();
-        if firework.complete() {
-            true
-        } else {
-            let needed = firework.needed_value().unwrap();
-            if card.value < needed {
-                true
-            } else {
-                if card.value > self.highest_attainable(card.color) {
-                    true
-                } else {
-                    self.discard.remaining(&card) != 1
-                }
-            }
-        }
+        firework.complete()
+            || card.value < firework.needed_value().unwrap()
+            || card.value > self.highest_attainable(card.color)
+            || self.discard.remaining(card) != 1
     }
 
     pub fn get_players(&self) -> Range<Player> {
@@ -385,7 +369,7 @@ impl BoardState {
         self.fireworks
             .iter()
             .map(|(_, firework)| firework.score())
-            .fold(0, |a, b| a + b)
+            .sum()
     }
 
     pub fn discard_size(&self) -> u32 {
@@ -406,35 +390,35 @@ impl BoardState {
 impl fmt::Display for BoardState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.is_over() {
-            r#try!(f.write_str(&format!("Turn {} (GAME ENDED):\n", self.turn)));
+            (f.write_str(&format!("Turn {} (GAME ENDED):\n", self.turn)))?;
         } else {
-            r#try!(f.write_str(&format!(
+            (f.write_str(&format!(
                 "Turn {} (Player {}'s turn):\n",
                 self.turn, self.player
-            )));
+            )))?;
         }
 
-        r#try!(f.write_str(&format!("{} cards remaining in deck\n", self.deck_size)));
+        (f.write_str(&format!("{} cards remaining in deck\n", self.deck_size)))?;
         if self.deck_size == 0 {
-            r#try!(f.write_str(&format!(
+            (f.write_str(&format!(
                 "Deck is empty.  {} turns remaining in game\n",
                 self.deckless_turns_remaining
-            )));
+            )))?;
         }
-        r#try!(f.write_str(&format!(
+        (f.write_str(&format!(
             "{}/{} hints remaining\n",
             self.hints_remaining, self.hints_total
-        )));
-        r#try!(f.write_str(&format!(
+        )))?;
+        (f.write_str(&format!(
             "{}/{} lives remaining\n",
             self.lives_remaining, self.lives_total
-        )));
-        r#try!(f.write_str("Fireworks:\n"));
+        )))?;
+        (f.write_str("Fireworks:\n"))?;
         for &color in COLORS.iter() {
-            r#try!(f.write_str(&format!("  {}\n", self.get_firework(color))));
+            (f.write_str(&format!("  {}\n", self.get_firework(color))))?;
         }
-        r#try!(f.write_str("Discard:\n"));
-        r#try!(f.write_str(&format!("{}\n", self.discard)));
+        (f.write_str("Discard:\n"))?;
+        (f.write_str(&format!("{}\n", self.discard)))?;
 
         Ok(())
     }
@@ -459,8 +443,7 @@ pub trait GameView {
     fn has_card(&self, player: &Player, card: &Card) -> bool {
         self.get_hand(player)
             .iter()
-            .position(|other_card| card == other_card)
-            .is_some()
+            .any(|other_card| card == other_card)
     }
 
     fn get_other_players(&self) -> Vec<Player> {
@@ -473,12 +456,12 @@ pub trait GameView {
     fn can_see(&self, card: &Card) -> bool {
         self.get_other_players()
             .iter()
-            .any(|player| self.has_card(&player, card))
+            .any(|player| self.has_card(player, card))
     }
 
     fn someone_else_can_play(&self) -> bool {
         self.get_other_players().iter().any(|player| {
-            self.get_hand(&player)
+            self.get_hand(player)
                 .iter()
                 .any(|card| self.get_board().is_playable(card))
         })
@@ -532,9 +515,9 @@ impl OwnedGameView {
             .collect::<FnvHashMap<_, _>>();
 
         OwnedGameView {
-            player: borrowed_view.player.clone(),
+            player: borrowed_view.player,
             hand_size: borrowed_view.hand_size,
-            other_hands: other_hands,
+            other_hands,
             board: (*borrowed_view.board).clone(),
         }
     }
@@ -564,22 +547,22 @@ pub struct GameState {
 }
 impl fmt::Display for GameState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        r#try!(f.write_str("\n"));
-        r#try!(f.write_str("======\n"));
-        r#try!(f.write_str("Hands:\n"));
-        r#try!(f.write_str("======\n"));
+        (f.write_str("\n"))?;
+        (f.write_str("======\n"))?;
+        (f.write_str("Hands:\n"))?;
+        (f.write_str("======\n"))?;
         for player in self.board.get_players() {
             let hand = &self.hands.get(&player).unwrap();
-            r#try!(f.write_str(&format!("player {}:", player)));
+            (f.write_str(&format!("player {}:", player)))?;
             for card in hand.iter() {
-                r#try!(f.write_str(&format!("    {}", card)));
+                (f.write_str(&format!("    {}", card)))?;
             }
-            r#try!(f.write_str(&"\n"));
+            (f.write_str("\n"))?;
         }
-        r#try!(f.write_str("======\n"));
-        r#try!(f.write_str("Board:\n"));
-        r#try!(f.write_str("======\n"));
-        r#try!(f.write_str(&format!("{}", self.board)));
+        (f.write_str("======\n"))?;
+        (f.write_str("Board:\n"))?;
+        (f.write_str("======\n"))?;
+        (f.write_str(&format!("{}", self.board)))?;
         Ok(())
     }
 }
@@ -601,11 +584,7 @@ impl GameState {
             })
             .collect::<FnvHashMap<_, _>>();
 
-        GameState {
-            hands: hands,
-            board: board,
-            deck: deck,
-        }
+        GameState { hands, board, deck }
     }
 
     pub fn get_players(&self) -> Range<Player> {
@@ -629,21 +608,21 @@ impl GameState {
             }
         }
         BorrowedGameView {
-            player: player,
+            player,
             hand_size: self.hands.get(&player).unwrap().len(),
-            other_hands: other_hands,
+            other_hands,
             board: &self.board,
         }
     }
 
     // takes a card from the player's hand, and replaces it if possible
     fn take_from_hand(&mut self, index: usize) -> Card {
-        let ref mut hand = self.hands.get_mut(&self.board.player).unwrap();
+        let hand = &mut self.hands.get_mut(&self.board.player).unwrap();
         hand.remove(index)
     }
 
     fn replenish_hand(&mut self) {
-        let ref mut hand = self.hands.get_mut(&self.board.player).unwrap();
+        let hand = &mut self.hands.get_mut(&self.board.player).unwrap();
         if (hand.len() as u32) < self.board.hand_size {
             if let Some(new_card) = self.deck.pop() {
                 self.board.deck_size -= 1;
@@ -726,9 +705,9 @@ impl GameState {
             }
         };
         let turn_record = TurnRecord {
-            player: self.board.player.clone(),
+            player: self.board.player,
             result: turn_result,
-            choice: choice,
+            choice,
         };
         self.board.turn_history.push(turn_record.clone());
 

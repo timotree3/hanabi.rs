@@ -2,8 +2,8 @@ use fnv::{FnvHashMap, FnvHashSet};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use game::*;
-use strategy::*;
+use crate::game::*;
+use crate::strategy::*;
 
 // strategy that explicitly cheats by using Rc/RefCell
 // serves as a reference point for other strategies

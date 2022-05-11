@@ -3,8 +3,8 @@ use fnv::FnvHashMap;
 use rand::{self, Rng, SeedableRng};
 use std::fmt;
 
-use game::*;
-use strategy::*;
+use crate::game::*;
+use crate::strategy::*;
 
 fn new_deck(seed: u32) -> Cards {
     let mut deck: Cards = Cards::new();
@@ -119,7 +119,7 @@ impl fmt::Display for Histogram {
         let mut keys = self.hist.keys().collect::<Vec<_>>();
         keys.sort();
         for val in keys {
-            try!(f.write_str(&format!("\n{}: {}", val, self.get_count(val),)));
+            r#try!(f.write_str(&format!("\n{}: {}", val, self.get_count(val),)));
         }
         Ok(())
     }

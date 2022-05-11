@@ -1,4 +1,4 @@
-use game::*;
+use crate::game::*;
 
 // Traits to implement for any valid Hanabi strategy
 

@@ -6,7 +6,7 @@ use std::hash::Hash;
 use std::ops::{Index, IndexMut};
 use std::slice;
 
-use game::*;
+use crate::game::*;
 
 // trait representing information about a card
 pub trait CardInfo {
@@ -405,7 +405,7 @@ impl CardInfo for CardPossibilityTable {
 impl fmt::Display for CardPossibilityTable {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for (card, weight) in &self.possible {
-            try!(f.write_str(&format!("{} {}, ", weight, card)));
+            r#try!(f.write_str(&format!("{} {}, ", weight, card)));
         }
         Ok(())
     }

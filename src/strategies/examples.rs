@@ -1,6 +1,6 @@
-use game::*;
+use crate::game::*;
 use rand::{self, Rng};
-use strategy::*;
+use crate::strategy::*;
 
 // dummy, terrible strategy, as an example
 #[derive(Clone)]

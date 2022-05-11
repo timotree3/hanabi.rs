@@ -159,14 +159,14 @@ impl CardPossibilityPartition {
             n_partitions += 1;
         }
 
-        // let mut s : String = "Partition: |".to_string();
+        // let mut s: String = "Partition: |".to_string();
         // for i in 0..n_partitions {
         //     for (card, block) in partition.iter() {
         //         if *block == i {
         //             s = s + &format!(" {}", card);
         //         }
         //     }
-        //     s = s + &format!(" |");
+        //     s.push_str(" |");
         // }
         // debug!("{}", s);
 

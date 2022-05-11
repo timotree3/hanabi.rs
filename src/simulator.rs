@@ -122,7 +122,7 @@ impl fmt::Display for Histogram {
         let mut keys = self.hist.keys().collect::<Vec<_>>();
         keys.sort();
         for val in keys {
-            f.write_str(&format!("\n{}: {}", val, self.get_count(val),))?;
+            write!(f, "\n{}: {}", val, self.get_count(val))?;
         }
         Ok(())
     }

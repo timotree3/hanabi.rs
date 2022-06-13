@@ -8,6 +8,7 @@ mod strategies {
     pub mod examples;
     mod hat_helpers;
     pub mod information;
+    pub mod ref_sieve;
 }
 
 use getopts::Options;
@@ -166,6 +167,7 @@ fn sim_games(
             as Box<dyn strategy::GameStrategyConfig + Sync>,
         "info" => Box::new(strategies::information::InformationStrategyConfig::new())
             as Box<dyn strategy::GameStrategyConfig + Sync>,
+        "ref_sieve" => Box::new(strategies::ref_sieve::Config),
         _ => {
             panic!("Unexpected strategy argument {strategy_str}");
         }

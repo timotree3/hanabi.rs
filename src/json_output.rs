@@ -11,37 +11,39 @@ fn color_value(color: &Color) -> usize {
 fn card_to_json(card: &Card) -> serde_json::Value {
     json!({
         "rank": card.value,
-        "suit": color_value(&card.color),
+        "suitIndex": color_value(&card.color),
     })
 }
 
 pub fn action_clue(hint: &Hint) -> serde_json::Value {
-    json!({
-        "type": 0,
-        "target": hint.player,
-        "clue": match hint.hinted {
-            Hinted::Value(value) => { json!({
-                "type": 0,
-                "value": value,
-            }) }
-            Hinted::Color(color) => { json!({
-                "type": 1,
+    match hint.hinted {
+        Hinted::Color(color) => {
+            json!({
+                "type": 2,
+                "target": hint.player,
                 "value": color_value(&color),
-            }) }
+            })
         }
-    })
+        Hinted::Value(value) => {
+            json!({
+                "type": 3,
+                "target": hint.player,
+                "value": value,
+            })
+        }
+    }
 }
 
 pub fn action_play((i, _card): &AnnotatedCard) -> serde_json::Value {
     json!({
-        "type": 1,
+        "type": 0,
         "target": i,
     })
 }
 
 pub fn action_discard((i, _card): &AnnotatedCard) -> serde_json::Value {
     json!({
-        "type": 2,
+        "type": 1,
         "target": i,
     })
 }
@@ -52,7 +54,9 @@ pub fn json_format(
     players: &Vec<String>,
 ) -> serde_json::Value {
     json!({
-        "variant": "No Variant",
+        "options": {
+            "variant": "No Variant",
+        },
         "players": players,
         "first_player": 0,
         "notes": players.iter().map(|_player| {json!([])}).collect::<Vec<_>>(), // TODO add notes

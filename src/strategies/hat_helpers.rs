@@ -10,8 +10,8 @@ impl ModulusInformation {
     pub fn new(modulus: u32, value: u32) -> Self {
         assert!(value < modulus);
         ModulusInformation {
-            modulus: modulus,
-            value: value,
+            modulus,
+            value,
         }
     }
 
@@ -21,7 +21,7 @@ impl ModulusInformation {
 
     pub fn combine(&mut self, other: Self, max_modulus: u32) {
         assert!(other.modulus <= self.info_remaining(max_modulus));
-        self.value = self.value + self.modulus * other.value;
+        self.value += self.modulus * other.value;
         self.modulus = std::cmp::min(max_modulus, self.modulus * other.modulus);
         assert!(self.value < self.modulus);
     }
@@ -45,7 +45,7 @@ impl ModulusInformation {
         let original_modulus = self.modulus;
         let original_value = self.value;
         let value = self.value % modulus;
-        self.value = self.value / modulus;
+        self.value /= modulus;
         // `self.modulus` is the largest number such that
         // `value + (self.modulus - 1) * modulus < original_modulus`.
         // TODO: find an explanation of why this makes everything work out
@@ -80,10 +80,10 @@ pub trait Question {
     // how much info does this question ask for?
     fn info_amount(&self) -> u32;
     // get the answer to this question, given cards
-    fn answer(&self, &Cards, &BoardState) -> u32;
+    fn answer(&self, hand: &Cards, board: &BoardState) -> u32;
     // process the answer to this question, updating card info
     fn acknowledge_answer(
-        &self, value: u32, &mut HandInfo<CardPossibilityTable>, &BoardState
+        &self, value: u32, hand_info: &mut HandInfo<CardPossibilityTable>, board: &BoardState
     );
 
     fn answer_info(&self, hand: &Cards, board: &BoardState) -> ModulusInformation {
@@ -105,11 +105,11 @@ pub trait Question {
 }
 
 pub trait PublicInformation: Clone {
-    fn get_player_info(&self, &Player) -> HandInfo<CardPossibilityTable>;
-    fn set_player_info(&mut self, &Player, HandInfo<CardPossibilityTable>);
+    fn get_player_info(&self, player: &Player) -> HandInfo<CardPossibilityTable>;
+    fn set_player_info(&mut self, player: &Player, hand_info: HandInfo<CardPossibilityTable>);
 
-    fn new(&BoardState) -> Self;
-    fn set_board(&mut self, &BoardState);
+    fn new(board: &BoardState) -> Self;
+    fn set_board(&mut self, board: &BoardState);
 
     /// If we store more state than just `HandInfo<CardPossibilityTable>`s, update it after `set_player_info` has been called.
     fn update_other_info(&mut self) {
@@ -126,10 +126,10 @@ pub trait PublicInformation: Clone {
     ///
     /// Note that `self` does not reflect the answers to previous questions; it reflects the state
     /// before the entire "hat value" calculation.
-    fn ask_question(&self, &Player, &HandInfo<CardPossibilityTable>, total_info: u32) -> Option<Box<Question>>;
+    fn ask_question(&self, player: &Player, hand_info: &HandInfo<CardPossibilityTable>, total_info: u32) -> Option<Box<dyn Question>>;
 
     fn ask_question_wrapper(&self, player: &Player, hand_info: &HandInfo<CardPossibilityTable>, total_info: u32)
-        -> Option<Box<Question>>
+        -> Option<Box<dyn Question>>
     {
         assert!(total_info > 0);
         if total_info == 1 {
@@ -191,7 +191,7 @@ pub trait PublicInformation: Clone {
         let (infos, new_player_hands): (Vec<_>, Vec<_>) = view.get_other_players().iter().map(|player| {
             let mut hand_info = self.get_player_info(player);
             let info = self.get_hat_info_for_player(player, &mut hand_info, total_info, view);
-            (info, (player.clone(), hand_info))
+            (info, (*player, hand_info))
         }).unzip();
         self.set_player_infos(new_player_hands);
         infos.into_iter().fold(
@@ -213,7 +213,7 @@ pub trait PublicInformation: Clone {
         }).map(|player| {
             let mut hand_info = self.get_player_info(&player);
             let player_info = self.get_hat_info_for_player(&player, &mut hand_info, info.modulus, view);
-            (player_info, (player.clone(), hand_info))
+            (player_info, (player, hand_info))
         }).unzip();
         for other_info in other_infos {
             info.subtract(&other_info);

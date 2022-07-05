@@ -75,7 +75,7 @@ fn main() {
         Ok(m) => { m }
         Err(f) => {
             print_usage(&program, opts);
-            panic!(f.to_string())
+            panic!("{}", f)
         }
     };
     if matches.opt_present("h") {
@@ -131,27 +131,27 @@ fn sim_games(n_players: u32, strategy_str: &str, seed: Option<u32>, n_trials: u3
 
     let game_opts = game::GameOptions {
         num_players: n_players,
-        hand_size: hand_size,
+        hand_size,
         num_hints: 8,
         num_lives: 3,
         // hanabi rules are a bit ambiguous about whether you can give hints that match 0 cards
         allow_empty_hints: false,
     };
 
-    let strategy_config : Box<strategy::GameStrategyConfig + Sync> = match strategy_str {
+    let strategy_config : Box<dyn strategy::GameStrategyConfig + Sync> = match strategy_str {
         "random" => {
             Box::new(strategies::examples::RandomStrategyConfig {
                 hint_probability: 0.4,
                 play_probability: 0.2,
-            }) as Box<strategy::GameStrategyConfig + Sync>
+            }) as Box<dyn strategy::GameStrategyConfig + Sync>
         },
         "cheat" => {
             Box::new(strategies::cheating::CheatingStrategyConfig::new())
-                as Box<strategy::GameStrategyConfig + Sync>
+                as Box<dyn strategy::GameStrategyConfig + Sync>
         },
         "info" => {
             Box::new(strategies::information::InformationStrategyConfig::new())
-                as Box<strategy::GameStrategyConfig + Sync>
+                as Box<dyn strategy::GameStrategyConfig + Sync>
         },
         _ => {
             panic!("Unexpected strategy argument {}", strategy_str);
@@ -176,7 +176,7 @@ fn get_results_table() -> String {
     let dashes         =        String::from("---------");
     let dashes_long    =        String::from("------------------");
     type TwoLines = (String, String);
-    fn make_twolines(player_nums: &Vec<u32>, head: TwoLines, make_block: &dyn Fn(u32) -> TwoLines) -> TwoLines {
+    fn make_twolines(player_nums: &[u32], head: TwoLines, make_block: &dyn Fn(u32) -> TwoLines) -> TwoLines {
         let mut blocks = player_nums.iter().cloned().map(make_block).collect::<Vec<_>>();
         blocks.insert(0, head);
         fn combine(items: Vec<String>) -> String {
@@ -189,7 +189,7 @@ fn get_results_table() -> String {
         body.into_iter().fold(String::default(), |output, (a, b)| (output + &a + "\n" + &b + "\n"))
     }
     let header = make_twolines(&player_nums,
-                               (space.clone(), dashes.clone()),
+                               (space.clone(), dashes),
                                &|n_players| (format_players(n_players), dashes_long.clone()));
     let mut body = strategies.iter().map(|strategy| {
         make_twolines(&player_nums, (format_name(strategy), space.clone()), &|n_players| {

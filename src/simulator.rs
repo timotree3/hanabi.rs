@@ -24,7 +24,7 @@ fn new_deck(seed: u32) -> Cards {
 
 pub fn simulate_once(
         opts: &GameOptions,
-        game_strategy: Box<GameStrategy>,
+        game_strategy: Box<dyn GameStrategy>,
         seed: u32,
     ) -> GameState {
     let deck = new_deck(seed);
@@ -33,7 +33,7 @@ pub fn simulate_once(
 
     let mut strategies = game.get_players().map(|player| {
         (player, game_strategy.initialize(player, &game.get_view(player)))
-    }).collect::<FnvHashMap<Player, Box<PlayerStrategy>>>();
+    }).collect::<FnvHashMap<Player, Box<dyn PlayerStrategy>>>();
 
     while !game.is_over() {
         let player = game.board.player;
@@ -46,14 +46,14 @@ pub fn simulate_once(
 
 
         let choice = {
-            let mut strategy = strategies.get_mut(&player).unwrap();
+            let strategy = strategies.get_mut(&player).unwrap();
             strategy.decide(&game.get_view(player))
         };
 
         let turn = game.process_choice(choice);
 
         for player in game.get_players() {
-            let mut strategy = strategies.get_mut(&player).unwrap();
+            let strategy = strategies.get_mut(&player).unwrap();
             strategy.update(&turn, &game.get_view(player));
         }
 
@@ -89,7 +89,7 @@ impl Histogram {
         self.insert_many(val, 1);
     }
     pub fn get_count(&self, val: &Score) -> u32 {
-        *self.hist.get(&val).unwrap_or(&0)
+        *self.hist.get(val).unwrap_or(&0)
     }
     pub fn percentage_with(&self, val: &Score) -> f32 {
         self.get_count(val) as f32 / self.total_count as f32
@@ -119,9 +119,9 @@ impl fmt::Display for Histogram {
         let mut keys = self.hist.keys().collect::<Vec<_>>();
         keys.sort();
         for val in keys {
-            try!(f.write_str(&format!(
+            f.write_str(&format!(
                 "\n{}: {}", val, self.get_count(val),
-            )));
+            ))?;
         }
         Ok(())
     }
@@ -164,7 +164,7 @@ pub fn simulate<T: ?Sized>(
                             );
                         }
                     }
-                    let game = simulate_once(&opts, strat_config_ref.initialize(&opts), seed);
+                    let game = simulate_once(opts, strat_config_ref.initialize(opts), seed);
                     let score = game.score();
                     lives_histogram.insert(game.board.lives_remaining);
                     score_histogram.insert(score);

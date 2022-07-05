@@ -25,7 +25,7 @@ impl CheatingStrategyConfig {
     }
 }
 impl GameStrategyConfig for CheatingStrategyConfig {
-    fn initialize(&self, _: &GameOptions) -> Box<GameStrategy> {
+    fn initialize(&self, _: &GameOptions) -> Box<dyn GameStrategy> {
         Box::new(CheatingStrategy::new())
     }
 }
@@ -42,7 +42,7 @@ impl CheatingStrategy {
     }
 }
 impl GameStrategy for CheatingStrategy {
-    fn initialize(&self, player: Player, view: &BorrowedGameView) -> Box<PlayerStrategy> {
+    fn initialize(&self, player: Player, view: &BorrowedGameView) -> Box<dyn PlayerStrategy> {
         for (&player, &hand) in &view.other_hands {
             self.player_hands_cheat.borrow_mut().insert(
                 player, hand.clone()
@@ -93,7 +93,7 @@ impl CheatingPlayerStrategy {
 
     // given a hand of cards, represents how badly it will need to play things
     fn hand_play_value(&self, view: &BorrowedGameView, hand: &Cards) -> u32 {
-        hand.iter().map(|card| self.card_play_value(view, card)).fold(0, |a,b| a+b)
+        hand.iter().map(|card| self.card_play_value(view, card)).sum()
     }
 
     // how badly do we need to play a particular card
@@ -104,13 +104,11 @@ impl CheatingPlayerStrategy {
         let my_hand_value = self.hand_play_value(view, my_hand);
 
         for player in view.board.get_players() {
-            if player != self.me {
-                if view.has_card(&player, card) {
-                    let their_hand_value = self.hand_play_value(view, hands.get(&player).unwrap());
-                    // they can play this card, and have less urgent plays than i do
-                    if their_hand_value < my_hand_value {
-                        return 10 - (card.value as i32)
-                    }
+            if player != self.me && view.has_card(&player, card) {
+                let their_hand_value = self.hand_play_value(view, hands.get(&player).unwrap());
+                // they can play this card, and have less urgent plays than i do
+                if their_hand_value < my_hand_value {
+                    return 10 - (card.value as i32)
                 }
             }
         }
@@ -132,7 +130,7 @@ impl CheatingPlayerStrategy {
             }
             set.insert(card.clone());
         }
-        return None
+        None
     }
 }
 impl PlayerStrategy for CheatingPlayerStrategy {
@@ -145,7 +143,7 @@ impl PlayerStrategy for CheatingPlayerStrategy {
             view.board.is_playable(card)
         }).collect::<Vec<_>>();
 
-        if playable_cards.len() > 0 {
+        if !playable_cards.is_empty() {
             // play the best playable card
             // the higher the play_score, the better to play
             let mut index = 0;
@@ -178,10 +176,8 @@ impl PlayerStrategy for CheatingPlayerStrategy {
 
         // hinting is better than discarding dead cards
         // (probably because it stalls the deck-drawing).
-        if view.board.hints_remaining > 0 {
-            if view.someone_else_can_play() {
-                return self.throwaway_hint(view);
-            }
+        if view.board.hints_remaining > 0 && view.someone_else_can_play() {
+            return self.throwaway_hint(view);
         }
 
         // if anything is totally useless, discard it

@@ -58,7 +58,7 @@ fn q_is_dead(index: usize) -> CardHasProperty {
 /// It's named that way because the `info_amount` grows additively with the `info_amount`s of
 /// the questions in `l`.
 struct AdditiveComboQuestion {
-    questions: Vec<Box<Question>>,
+    questions: Vec<Box<dyn Question>>,
 }
 impl Question for AdditiveComboQuestion {
     fn info_amount(&self) -> u32 {
@@ -113,7 +113,7 @@ impl CardPossibilityPartition {
         let mut partition = FnvHashMap::default();
         let mut n_partitions = 0;
 
-        let has_dead = card_table.probability_is_dead(&board) != 0.0;
+        let has_dead = card_table.probability_is_dead(board) != 0.0;
 
         // TODO: group things of different colors and values?
         let mut effective_max = max_n_partitions;
@@ -152,9 +152,9 @@ impl CardPossibilityPartition {
         // debug!("{}", s);
 
         CardPossibilityPartition {
-            index: index,
-            n_partitions: n_partitions,
-            partition: partition,
+            index,
+            n_partitions,
+            partition,
         }
     }
 }
@@ -162,7 +162,7 @@ impl Question for CardPossibilityPartition {
     fn info_amount(&self) -> u32 { self.n_partitions }
     fn answer(&self, hand: &Cards, _: &BoardState) -> u32 {
         let ref card = hand[self.index];
-        *self.partition.get(&card).unwrap()
+        *self.partition.get(card).unwrap()
     }
     fn acknowledge_answer(
         &self,
@@ -220,7 +220,7 @@ impl MyPublicInformation {
             })
         });
 
-        return if !may_be_all_one_color && !may_be_all_one_number { 4 } else { 3 }
+        if !may_be_all_one_color && !may_be_all_one_number { 4 } else { 3 }
     }
 
     fn get_hint_index_score(&self, card_table: &CardPossibilityTable) -> i32 {
@@ -238,7 +238,7 @@ impl MyPublicInformation {
         if !card_table.value_determined() {
             score += 1;
         }
-        return score;
+        score
     }
 
     fn get_index_for_hint(&self, player: &Player) -> usize {
@@ -355,12 +355,12 @@ impl MyPublicInformation {
         hint_option_set.into_iter().collect::<FnvHashSet<_>>().into_iter().map(|hinted| {
             Hint {
                 player: hint_player,
-                hinted: hinted,
+                hinted,
             }
         }).collect()
     }
 
-    fn decode_hint_choice(&self, hint: &Hint, result: &Vec<bool>) -> ModulusInformation {
+    fn decode_hint_choice(&self, hint: &Hint, result: &[bool]) -> ModulusInformation {
         let hinter = self.board.player;
 
         let info_per_player: Vec<_> = self.get_other_players_starting_after(hinter).into_iter().map(
@@ -372,7 +372,7 @@ impl MyPublicInformation {
 
         let player_amt = (n + hint.player - hinter - 1) % n;
 
-        let amt_from_prev_players = info_per_player.iter().take(player_amt as usize).fold(0, |a, b| a + b);
+        let amt_from_prev_players = info_per_player.iter().take(player_amt as usize).sum::<u32>();
         let hint_info_we_can_give_to_this_player = info_per_player[player_amt as usize];
 
         let card_index = self.get_index_for_hint(&hint.player);
@@ -405,12 +405,12 @@ impl MyPublicInformation {
         ModulusInformation::new(total_info, hint_value)
     }
 
-    fn update_from_hint_choice(&mut self, hint: &Hint, matches: &Vec<bool>, view: &OwnedGameView) {
+    fn update_from_hint_choice(&mut self, hint: &Hint, matches: &[bool], view: &OwnedGameView) {
         let info = self.decode_hint_choice(hint, matches);
         self.update_from_hat_sum(info, view);
     }
 
-    fn update_from_hint_matches(&mut self, hint: &Hint, matches: &Vec<bool>) {
+    fn update_from_hint_matches(&mut self, hint: &Hint, matches: &[bool]) {
         let info = self.get_player_info_mut(&hint.player);
         info.update_for_hint(&hint.hinted, matches);
     }
@@ -424,10 +424,10 @@ impl MyPublicInformation {
     fn someone_else_needs_hint(&self, view: &OwnedGameView) -> bool {
         // Does another player have a playable card, but doesn't know it?
         view.get_other_players().iter().any(|player| {
-            let has_playable_card = view.get_hand(&player).iter().any(|card| {
+            let has_playable_card = view.get_hand(player).iter().any(|card| {
                 view.get_board().is_playable(card)
             });
-            has_playable_card && !self.knows_playable_card(&player)
+            has_playable_card && !self.knows_playable_card(player)
         })
     }
 
@@ -466,7 +466,7 @@ impl MyPublicInformation {
             info.remove(index);
 
             // push *before* incrementing public counts
-            if info.len() < new_view.hand_size(&player) {
+            if info.len() < new_view.hand_size(player) {
                 info.push(new_card_table);
             }
         }
@@ -491,7 +491,7 @@ impl PublicInformation for MyPublicInformation {
             (player, hand_info)
         }).collect::<FnvHashMap<_,_>>();
         MyPublicInformation {
-            hand_info: hand_info,
+            hand_info,
             card_counts: CardCounts::new(),
             board: board.clone(),
         }
@@ -518,7 +518,7 @@ impl PublicInformation for MyPublicInformation {
         _me: &Player,
         hand_info: &HandInfo<CardPossibilityTable>,
         total_info: u32,
-    ) -> Option<Box<Question>> {
+    ) -> Option<Box<dyn Question>> {
         // Changing anything inside this function will not break the information transfer
         // mechanisms!
 
@@ -532,8 +532,7 @@ impl PublicInformation for MyPublicInformation {
 
         // We don't need to find out anything about cards that are determined or dead.
         let augmented_hand_info = augmented_hand_info_raw.into_iter().filter(|&(i, _, p_dead)| {
-            if p_dead == 1.0 { false }
-            else if hand_info[i].is_determined() { false }
+            if p_dead == 1.0 || hand_info[i].is_determined() { false }
             else { true }
         }).collect::<Vec<_>>();
 
@@ -565,11 +564,11 @@ impl PublicInformation for MyPublicInformation {
             // only matters if we find a playable/dead card, and conditional on that, it's better
             // to find out about as many non-playable/non-dead cards as possible.
             to_ask.sort_by_key(|&(ask_dead, _, p_yes)| {(ask_dead, FloatOrd(p_yes))});
-            let questions = to_ask.into_iter().map(|(ask_dead, i, _)| -> Box<Question> {
+            let questions = to_ask.into_iter().map(|(ask_dead, i, _)| -> Box<dyn Question> {
                 if ask_dead { Box::new(q_is_dead(i)) }
                 else        { Box::new(q_is_playable(i)) }
             }).collect::<Vec<_>>();
-            if questions.len() > 0 {
+            if !questions.is_empty() {
                 return Some(Box::new(AdditiveComboQuestion { questions }))
             }
         }
@@ -607,7 +606,7 @@ impl InformationStrategyConfig {
     }
 }
 impl GameStrategyConfig for InformationStrategyConfig {
-    fn initialize(&self, _: &GameOptions) -> Box<GameStrategy> {
+    fn initialize(&self, _: &GameOptions) -> Box<dyn GameStrategy> {
         Box::new(InformationStrategy::new())
     }
 }
@@ -620,7 +619,7 @@ impl InformationStrategy {
     }
 }
 impl GameStrategy for InformationStrategy {
-    fn initialize(&self, player: Player, view: &BorrowedGameView) -> Box<PlayerStrategy> {
+    fn initialize(&self, player: Player, view: &BorrowedGameView) -> Box<dyn PlayerStrategy> {
         Box::new(InformationPlayerStrategy {
             me: player,
             public_info: MyPublicInformation::new(view.board),
@@ -650,10 +649,8 @@ impl InformationPlayerStrategy {
         let mut num_with = 1;
         if view.board.deck_size > 0 {
             for player in view.board.get_players() {
-                if player != self.me {
-                    if view.has_card(&player, card) {
-                        num_with += 1;
-                    }
+                if player != self.me && view.has_card(&player, card) {
+                    num_with += 1;
                 }
             }
         }
@@ -667,21 +664,19 @@ impl InformationPlayerStrategy {
         for (i, card_table) in hand.iter().enumerate() {
             if card_table.probability_is_dead(board) == 1.0 {
                 useless.insert(i);
-            } else {
-                if let Some(card) = card_table.get_card() {
-                    if seen.contains_key(&card) {
-                        // found a duplicate card
-                        useless.insert(i);
-                        useless.insert(*seen.get(&card).unwrap());
-                    } else {
-                        seen.insert(card, i);
-                    }
+            } else if let Some(card) = card_table.get_card() {
+                if seen.contains_key(&card) {
+                    // found a duplicate card
+                    useless.insert(i);
+                    useless.insert(*seen.get(&card).unwrap());
+                } else {
+                    seen.insert(card, i);
                 }
             }
         }
         let mut useless_vec : Vec<usize> = useless.into_iter().collect();
         useless_vec.sort();
-        return useless_vec;
+        useless_vec
     }
 
     // how good is it to give this hint to this player?
@@ -692,8 +687,8 @@ impl InformationPlayerStrategy {
 
         let hint_player = &hint.player;
         let hinted = &hint.hinted;
-        let hand = view.get_hand(&hint_player);
-        let mut hand_info = self.public_info.get_player_info(&hint_player);
+        let hand = view.get_hand(hint_player);
+        let mut hand_info = self.public_info.get_player_info(hint_player);
 
         let mut goodness = 1.0;
         for (i, card_table) in hand_info.iter_mut().enumerate() {
@@ -716,9 +711,7 @@ impl InformationPlayerStrategy {
             let new_weight = card_table.total_weight();
             assert!(new_weight <= old_weight);
             let bonus = {
-                if card_table.is_determined() {
-                    2
-                } else if card_table.probability_is_dead(&view.board) == 1.0 {
+                if card_table.is_determined() || card_table.probability_is_dead(&view.board) == 1.0 {
                     2
                 } else {
                     1
@@ -744,12 +737,10 @@ impl InformationPlayerStrategy {
             h2.0.partial_cmp(&h1.0).unwrap_or(Ordering::Equal)
         });
 
-        if hint_options.len() == 0 {
+        if hint_options.is_empty() {
             // NOTE: Technically possible, but never happens
-        } else {
-            if hint_options.len() > 1 {
-                debug!("Choosing amongst hint options: {:?}", hint_options);
-            }
+        } else if hint_options.len() > 1 {
+            debug!("Choosing amongst hint options: {:?}", hint_options);
         }
         hint_options.remove(0).1
     }
@@ -809,7 +800,7 @@ impl InformationPlayerStrategy {
                 (i, card_table, p)
             }).collect::<Vec<_>>();
 
-            if risky_playable_cards.len() > 0 {
+            if !risky_playable_cards.is_empty() {
                 risky_playable_cards.sort_by(|c1, c2| {
                     c2.2.partial_cmp(&c1.2).unwrap_or(Ordering::Equal)
                 });
@@ -827,7 +818,7 @@ impl InformationPlayerStrategy {
         // NOTE When changing this, make sure to keep the "discard" branch of update() up to date!
         let will_hint =
             if view.board.hints_remaining > 0 && public_info.someone_else_needs_hint(view) { true }
-            else if view.board.discard_size() <= discard_threshold && useless_indices.len() > 0 { false }
+            else if view.board.discard_size() <= discard_threshold && !useless_indices.is_empty() { false }
             // hinting is better than discarding dead cards
             // (probably because it stalls the deck-drawing).
             else if view.board.hints_remaining > 0 && view.someone_else_can_play() { true }
@@ -849,7 +840,7 @@ impl InformationPlayerStrategy {
         if public_useless_indices.len() > 1 {
             let info = public_info.get_hat_sum(public_useless_indices.len() as u32, view);
             return TurnChoice::Discard(public_useless_indices[info.value as usize]);
-        } else if useless_indices.len() > 0 {
+        } else if !useless_indices.is_empty() {
             // TODO: have opponents infer that i knew a card was useless
             // TODO: after that, potentially prefer useless indices that arent public
             return TurnChoice::Discard(useless_indices[0]);

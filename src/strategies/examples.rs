@@ -10,7 +10,7 @@ pub struct RandomStrategyConfig {
 }
 
 impl GameStrategyConfig for RandomStrategyConfig {
-    fn initialize(&self, _: &GameOptions) -> Box<GameStrategy> {
+    fn initialize(&self, _: &GameOptions) -> Box<dyn GameStrategy> {
         Box::new(RandomStrategy {
             hint_probability: self.hint_probability,
             play_probability: self.play_probability,
@@ -23,7 +23,7 @@ pub struct RandomStrategy {
     play_probability: f64,
 }
 impl GameStrategy for RandomStrategy {
-    fn initialize(&self, player: Player, _: &BorrowedGameView) -> Box<PlayerStrategy> {
+    fn initialize(&self, player: Player, _: &BorrowedGameView) -> Box<dyn PlayerStrategy> {
         Box::new(RandomStrategyPlayer {
             hint_probability: self.hint_probability,
             play_probability: self.play_probability,
@@ -44,7 +44,7 @@ impl PlayerStrategy for RandomStrategyPlayer {
         if p < self.hint_probability {
             if view.board.hints_remaining > 0 {
                 let hint_player = view.board.player_to_left(&self.me);
-                let hint_card = rand::thread_rng().choose(&view.get_hand(&hint_player)).unwrap();
+                let hint_card = rand::thread_rng().choose(view.get_hand(&hint_player)).unwrap();
                 let hinted = {
                     if rand::random() {
                         // hint a color
@@ -55,7 +55,7 @@ impl PlayerStrategy for RandomStrategyPlayer {
                 };
                 TurnChoice::Hint(Hint {
                     player: hint_player,
-                    hinted: hinted,
+                    hinted,
                 })
             } else {
                 TurnChoice::Discard(0)

@@ -1,4 +1,4 @@
-use game::*;
+use crate::game::*;
 use serde_json::*;
 
 fn color_value(color: &Color) -> usize {

@@ -1,12 +1,12 @@
 use std::cmp::Eq;
 use std::collections::{HashMap, HashSet};
 use std::convert::From;
-use std::fmt;
+use std::fmt::{self, Write};
 use std::hash::Hash;
 use std::ops::{Index, IndexMut};
 use std::slice;
 
-use game::*;
+use crate::game::*;
 
 // trait representing information about a card
 pub trait CardInfo {
@@ -33,7 +33,7 @@ pub trait CardInfo {
     // get probability weight for the card
     #[allow(unused_variables)]
     fn get_weight(&self, card: &Card) -> f32 {
-        1 as f32
+        1.0
     }
 
     fn get_weighted_possibilities(&self) -> Vec<(Card, f32)> {
@@ -49,11 +49,11 @@ pub trait CardInfo {
     fn total_weight(&self) -> f32 {
         self.get_possibilities()
             .iter()
-            .map(|card| self.get_weight(&card))
+            .map(|card| self.get_weight(card))
             .fold(0.0, |a, b| a + b)
     }
 
-    fn weighted_score<T>(&self, score_fn: &Fn(&Card) -> T) -> f32
+    fn weighted_score<T>(&self, score_fn: &dyn Fn(&Card) -> T) -> f32
     where
         f32: From<T>,
     {
@@ -72,7 +72,7 @@ pub trait CardInfo {
         self.weighted_score(&|card| card.value as f32)
     }
 
-    fn probability_of_predicate(&self, predicate: &Fn(&Card) -> bool) -> f32 {
+    fn probability_of_predicate(&self, predicate: &dyn Fn(&Card) -> bool) -> f32 {
         let f = |card: &Card| {
             if predicate(card) {
                 1.0
@@ -149,7 +149,7 @@ where
     fn get_possibilities(&self) -> Vec<T> {
         self.get_possibility_set()
             .iter()
-            .map(|t| t.clone())
+            .copied()
             .collect::<Vec<T>>()
     }
 
@@ -160,14 +160,14 @@ where
     fn initialize() -> HashSet<T> {
         Self::get_all_possibilities()
             .iter()
-            .map(|val| val.clone())
+            .copied()
             .collect::<HashSet<_>>()
     }
 
     fn mark_true(&mut self, value: T) {
         let possible = self.get_mut_possibility_set();
         possible.clear();
-        possible.insert(value.clone());
+        possible.insert(value);
     }
 
     fn mark_false(&mut self, value: T) {
@@ -268,7 +268,7 @@ impl fmt::Display for SimpleCardInfo {
         //}
         for &value in &VALUES {
             if self.value_info.is_possible(value) {
-                string.push_str(&format!("{}", value));
+                write!(string, "{value}").unwrap();
             }
         }
         f.pad(&string)
@@ -301,10 +301,10 @@ impl CardPossibilityTable {
 
     pub fn decrement_weight(&mut self, card: &Card) {
         let remove = {
-            let weight = self.possible.get_mut(card).expect(&format!(
-                "Decrementing weight for impossible card: {}",
-                card
-            ));
+            let weight = self
+                .possible
+                .get_mut(card)
+                .unwrap_or_else(|| panic!("Decrementing weight for impossible card: {card}"));
             *weight -= 1;
             *weight == 0
         };
@@ -368,7 +368,7 @@ impl<'a> From<&'a CardCounts> for CardPossibilityTable {
                 }
             }
         }
-        CardPossibilityTable { possible: possible }
+        CardPossibilityTable { possible }
     }
 }
 impl CardInfo for CardPossibilityTable {
@@ -380,11 +380,7 @@ impl CardInfo for CardPossibilityTable {
         self.possible.contains_key(card)
     }
     fn get_possibilities(&self) -> Vec<Card> {
-        let mut cards = self
-            .possible
-            .keys()
-            .map(|card| card.clone())
-            .collect::<Vec<_>>();
+        let mut cards = self.possible.keys().cloned().collect::<Vec<_>>();
         cards.sort();
         cards
     }
@@ -405,7 +401,7 @@ impl CardInfo for CardPossibilityTable {
 impl fmt::Display for CardPossibilityTable {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for (card, weight) in &self.possible {
-            try!(f.write_str(&format!("{} {}, ", weight, card)));
+            write!(f, "{weight} {card}, ")?;
         }
         Ok(())
     }
@@ -424,20 +420,18 @@ where
 {
     pub fn new(hand_size: u32) -> Self {
         let hand_info = (0..hand_size).map(|_| T::new()).collect::<Vec<_>>();
-        HandInfo {
-            hand_info: hand_info,
-        }
+        HandInfo { hand_info }
     }
 
     // update for hint to me
-    pub fn update_for_hint(&mut self, hinted: &Hinted, matches: &Vec<bool>) {
-        match hinted {
-            &Hinted::Color(color) => {
+    pub fn update_for_hint(&mut self, hinted: &Hinted, matches: &[bool]) {
+        match *hinted {
+            Hinted::Color(color) => {
                 for (card_info, &matched) in self.hand_info.iter_mut().zip(matches.iter()) {
                     card_info.mark_color(color, matched);
                 }
             }
-            &Hinted::Value(value) => {
+            Hinted::Value(value) => {
                 for (card_info, &matched) in self.hand_info.iter_mut().zip(matches.iter()) {
                     card_info.mark_value(value, matched);
                 }

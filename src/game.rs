@@ -20,7 +20,7 @@ pub fn get_count_for_value(value: Value) -> u32 {
         2 | 3 | 4 => 2,
         5 => 1,
         _ => {
-            panic!(format!("Unexpected value: {}", value));
+            panic!("Unexpected value: {value}");
         }
     }
 }
@@ -32,10 +32,7 @@ pub struct Card {
 }
 impl Card {
     pub fn new(color: Color, value: Value) -> Card {
-        Card {
-            color: color,
-            value: value,
-        }
+        Card { color, value }
     }
 }
 impl fmt::Display for Card {
@@ -61,7 +58,7 @@ impl CardCounts {
                 counts.insert(Card::new(color, value), 0);
             }
         }
-        CardCounts { counts: counts }
+        CardCounts { counts }
     }
 
     pub fn get_count(&self, card: &Card) -> u32 {
@@ -81,16 +78,16 @@ impl CardCounts {
 impl fmt::Display for CardCounts {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for &color in COLORS.iter() {
-            try!(f.write_str(&format!("{}: ", color,)));
+            write!(f, "{color}: ")?;
             for &value in VALUES.iter() {
                 let count = self.get_count(&Card::new(color, value));
                 let total = get_count_for_value(value);
-                try!(f.write_str(&format!("{}/{} {}s", count, total, value)));
+                write!(f, "{count}/{total} {value}s")?;
                 if value != FINAL_VALUE {
-                    try!(f.write_str(", "));
+                    f.write_str(", ")?;
                 }
             }
-            try!(f.write_str("\n"));
+            f.write_str("\n")?;
         }
         Ok(())
     }
@@ -126,9 +123,7 @@ impl Discard {
 }
 impl fmt::Display for Discard {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // try!(f.write_str(&format!(
-        //     "{}", self.cards,
-        // )));
+        // write!(f, "{}", self.cards)?;
         write!(f, "{}", self.counts)
     }
 }
@@ -143,10 +138,7 @@ pub struct Firework {
 }
 impl Firework {
     pub fn new(color: Color) -> Firework {
-        Firework {
-            color: color,
-            top: 0,
-        }
+        Firework { color, top: 0 }
     }
 
     pub fn needed_value(&self) -> Option<Value> {
@@ -194,12 +186,12 @@ pub enum Hinted {
 }
 impl fmt::Display for Hinted {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &Hinted::Color(color) => {
-                write!(f, "{}", color)
+        match *self {
+            Hinted::Color(color) => {
+                write!(f, "{color}")
             }
-            &Hinted::Value(value) => {
-                write!(f, "{}", value)
+            Hinted::Value(value) => {
+                write!(f, "{value}")
             }
         }
     }
@@ -282,9 +274,9 @@ impl BoardState {
             .collect::<FnvHashMap<_, _>>();
 
         BoardState {
-            deck_size: deck_size,
+            deck_size,
             total_cards: deck_size,
-            fireworks: fireworks,
+            fireworks,
             discard: Discard::new(),
             num_players: opts.num_players,
             hand_size: opts.hand_size,
@@ -340,52 +332,28 @@ impl BoardState {
                 return value - 1;
             }
         }
-        return FINAL_VALUE;
+        FINAL_VALUE
     }
 
     // is never going to play, based on discard + fireworks
     pub fn is_dead(&self, card: &Card) -> bool {
         let firework = self.fireworks.get(&card.color).unwrap();
-        if firework.complete() {
-            true
-        } else {
-            let needed = firework.needed_value().unwrap();
-            if card.value < needed {
-                true
-            } else {
-                card.value > self.highest_attainable(card.color)
-            }
-        }
+        firework.complete()
+            || card.value < firework.needed_value().unwrap()
+            || card.value > self.highest_attainable(card.color)
     }
 
     // can be discarded without necessarily sacrificing score, based on discard + fireworks
     pub fn is_dispensable(&self, card: &Card) -> bool {
-        let firework = self.fireworks.get(&card.color).unwrap();
-        if firework.complete() {
-            true
-        } else {
-            let needed = firework.needed_value().unwrap();
-            if card.value < needed {
-                true
-            } else {
-                if card.value > self.highest_attainable(card.color) {
-                    true
-                } else {
-                    self.discard.remaining(&card) != 1
-                }
-            }
-        }
+        self.is_dead(card) || self.discard.remaining(card) != 1
     }
 
     pub fn get_players(&self) -> Range<Player> {
-        (0..self.num_players)
+        0..self.num_players
     }
 
     pub fn score(&self) -> Score {
-        self.fireworks
-            .iter()
-            .map(|(_, firework)| firework.score())
-            .fold(0, |a, b| a + b)
+        self.fireworks.values().map(Firework::score).sum()
     }
 
     pub fn discard_size(&self) -> u32 {
@@ -408,35 +376,35 @@ impl BoardState {
 impl fmt::Display for BoardState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.is_over() {
-            try!(f.write_str(&format!("Turn {} (GAME ENDED):\n", self.turn)));
+            writeln!(f, "Turn {} (GAME ENDED):", self.turn)?;
         } else {
-            try!(f.write_str(&format!(
-                "Turn {} (Player {}'s turn):\n",
-                self.turn, self.player
-            )));
+            writeln!(f, "Turn {} (Player {}'s turn):", self.turn, self.player)?;
         }
 
-        try!(f.write_str(&format!("{} cards remaining in deck\n", self.deck_size)));
+        writeln!(f, "{} cards remaining in deck", self.deck_size)?;
         if self.deck_size == 0 {
-            try!(f.write_str(&format!(
-                "Deck is empty.  {} turns remaining in game\n",
+            writeln!(
+                f,
+                "Deck is empty.  {} turns remaining in game",
                 self.deckless_turns_remaining
-            )));
+            )?;
         }
-        try!(f.write_str(&format!(
-            "{}/{} hints remaining\n",
+        writeln!(
+            f,
+            "{}/{} hints remaining",
             self.hints_remaining, self.hints_total
-        )));
-        try!(f.write_str(&format!(
-            "{}/{} lives remaining\n",
+        )?;
+        writeln!(
+            f,
+            "{}/{} lives remaining",
             self.lives_remaining, self.lives_total
-        )));
-        try!(f.write_str("Fireworks:\n"));
+        )?;
+        f.write_str("Fireworks:\n")?;
         for &color in COLORS.iter() {
-            try!(f.write_str(&format!("  {}\n", self.get_firework(color))));
+            writeln!(f, "  {}", self.get_firework(color))?;
         }
-        try!(f.write_str("Discard:\n"));
-        try!(f.write_str(&format!("{}\n", self.discard)));
+        f.write_str("Discard:\n")?;
+        writeln!(f, "{}\n", self.discard)?;
 
         Ok(())
     }
@@ -445,7 +413,7 @@ impl fmt::Display for BoardState {
 // complete game view of a given player
 pub trait GameView {
     fn me(&self) -> Player;
-    fn get_hand(&self, &Player) -> &Cards;
+    fn get_hand(&self, player: &Player) -> &Cards;
     fn get_board(&self) -> &BoardState;
 
     fn my_hand_size(&self) -> usize;
@@ -461,8 +429,7 @@ pub trait GameView {
     fn has_card(&self, player: &Player, card: &Card) -> bool {
         self.get_hand(player)
             .iter()
-            .position(|other_card| card == other_card)
-            .is_some()
+            .any(|other_card| card == other_card)
     }
 
     fn get_other_players(&self) -> Vec<Player> {
@@ -475,12 +442,12 @@ pub trait GameView {
     fn can_see(&self, card: &Card) -> bool {
         self.get_other_players()
             .iter()
-            .any(|player| self.has_card(&player, card))
+            .any(|player| self.has_card(player, card))
     }
 
     fn someone_else_can_play(&self) -> bool {
         self.get_other_players().iter().any(|player| {
-            self.get_hand(&player)
+            self.get_hand(player)
                 .iter()
                 .any(|card| self.get_board().is_playable(card))
         })
@@ -534,9 +501,9 @@ impl OwnedGameView {
             .collect::<FnvHashMap<_, _>>();
 
         OwnedGameView {
-            player: borrowed_view.player.clone(),
+            player: borrowed_view.player,
             hand_size: borrowed_view.hand_size,
-            other_hands: other_hands,
+            other_hands,
             board: (*borrowed_view.board).clone(),
         }
     }
@@ -582,22 +549,22 @@ pub struct GameState {
 }
 impl fmt::Display for GameState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(f.write_str("\n"));
-        try!(f.write_str("======\n"));
-        try!(f.write_str("Hands:\n"));
-        try!(f.write_str("======\n"));
+        f.write_str("\n")?;
+        f.write_str("======\n")?;
+        f.write_str("Hands:\n")?;
+        f.write_str("======\n")?;
         for player in self.board.get_players() {
             let hand = &self.hands.get(&player).unwrap();
-            try!(f.write_str(&format!("player {}:", player)));
+            write!(f, "player {player}:")?;
             for (_i, card) in hand.iter() {
-                try!(f.write_str(&format!("    {}", card)));
+                write!(f, "    {card}")?;
             }
-            try!(f.write_str(&"\n"));
+            f.write_str("\n")?;
         }
-        try!(f.write_str("======\n"));
-        try!(f.write_str("Board:\n"));
-        try!(f.write_str("======\n"));
-        try!(f.write_str(&format!("{}", self.board)));
+        f.write_str("======\n")?;
+        f.write_str("Board:\n")?;
+        f.write_str("======\n")?;
+        write!(f, "{}", self.board)?;
         Ok(())
     }
 }
@@ -654,9 +621,9 @@ impl GameState {
             }
         }
         BorrowedGameView {
-            player: player,
+            player,
             hand_size: self.hands.get(&player).unwrap().len(),
-            other_hands: other_hands,
+            other_hands,
             board: &self.board,
         }
     }
@@ -669,27 +636,19 @@ impl GameState {
 
     // takes a card from the player's hand, and replaces it if possible
     fn take_from_hand(&mut self, index: usize) -> Card {
-        // FIXME this code looks like it's awfully contorted in order to please the borrow checker.
-        // Can we have this look nicer?
-        let result = {
-            let ref mut hand = self.hands.get_mut(&self.board.player).unwrap();
-            hand.remove(index).1
-        };
+        let hand = &mut self.hands.get_mut(&self.board.player).unwrap();
+        let card = hand.remove(index).1;
         self.update_player_hand();
-        result
+        card
     }
 
     fn replenish_hand(&mut self) {
-        // FIXME this code looks like it's awfully contorted in order to please the borrow checker.
-        // Can we have this look nicer?
-        {
-            let ref mut hand = self.hands.get_mut(&self.board.player).unwrap();
-            if (hand.len() as u32) < self.board.hand_size {
-                if let Some(new_card) = self.deck.pop() {
-                    self.board.deck_size -= 1;
-                    debug!("Drew new card, {}", new_card.1);
-                    hand.push(new_card);
-                }
+        let hand = &mut self.hands.get_mut(&self.board.player).unwrap();
+        if (hand.len() as u32) < self.board.hand_size {
+            if let Some(new_card) = self.deck.pop() {
+                self.board.deck_size -= 1;
+                debug!("Drew new card, {}", new_card.1);
+                hand.push(new_card);
             }
         }
         self.update_player_hand();
@@ -706,9 +665,10 @@ impl GameState {
                     self.board.hints_remaining -= 1;
                     debug!("Hint to player {}, about {}", hint.player, hint.hinted);
 
-                    assert!(
-                        self.board.player != hint.player,
-                        format!("Player {} gave a hint to himself", hint.player)
+                    assert_ne!(
+                        self.board.player, hint.player,
+                        "Player {} gave a hint to himself",
+                        hint.player
                     );
 
                     let hand = self.hands.get(&hint.player).unwrap();
@@ -767,9 +727,9 @@ impl GameState {
             }
         };
         let turn_record = TurnRecord {
-            player: self.board.player.clone(),
+            player: self.board.player,
             result: turn_result,
-            choice: choice,
+            choice,
         };
         self.board.turn_history.push(turn_record.clone());
 

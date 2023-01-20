@@ -1,4 +1,4 @@
-use game::*;
+use crate::game::*;
 
 // Traits to implement for any valid Hanabi strategy
 
@@ -11,20 +11,20 @@ pub trait PlayerStrategy {
     fn name(&self) -> String;
     // A function to decide what to do on the player's turn.
     // Given a BorrowedGameView, outputs their choice.
-    fn decide(&mut self, &BorrowedGameView) -> TurnChoice;
+    fn decide(&mut self, view: &BorrowedGameView) -> TurnChoice;
     // A function to update internal state after other players' turns.
     // Given what happened last turn, and the new state.
-    fn update(&mut self, &TurnRecord, &BorrowedGameView);
+    fn update(&mut self, turn_record: &TurnRecord, view: &BorrowedGameView);
 }
 // Represents the overall strategy for a game
 // Shouldn't do much, except store configuration parameters and
 // possibility initialize some shared randomness between players
 pub trait GameStrategy {
-    fn initialize(&self, Player, &BorrowedGameView) -> Box<PlayerStrategy>;
+    fn initialize(&self, me: Player, view: &BorrowedGameView) -> Box<dyn PlayerStrategy>;
 }
 
 // Represents configuration for a strategy.
 // Acts as a factory for game strategies, so we can play many rounds
 pub trait GameStrategyConfig {
-    fn initialize(&self, &GameOptions) -> Box<GameStrategy>;
+    fn initialize(&self, opts: &GameOptions) -> Box<dyn GameStrategy>;
 }

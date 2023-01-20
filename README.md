@@ -3,17 +3,13 @@
 Hanabi is a cooperative card game of incomplete information.
 Despite relatively [simple rules](https://boardgamegeek.com/article/10670613#10670613),
 the space of Hanabi strategies is quite interesting.
-This project provides a framework for implementing Hanabi strategies in Rust.
-It also explores some implementations, based on ideas from
-[this paper](https://d0474d97-a-62cb3a1a-s-sites.googlegroups.com/site/rmgpgrwc/research-papers/Hanabi_final.pdf).
-In particular, it contains an improved version of their "information strategy",
-which achieves the best results I'm aware of for games with more than 2 players ([see below](#results)).
+This project provides a framework for implementing Hanabi strategies in Rust, and also implements extremely strong strategies.
+
+The best strategy is based on the "information strategy" from
+[this paper](https://d0474d97-a-62cb3a1a-s-sites.googlegroups.com/site/rmgpgrwc/research-papers/Hanabi_final.pdf).  See results ([below](#results)).
+It held state-of-the-art results (from March 2016) until December 2019, when [researchers at Facebook](https://arxiv.org/abs/1912.02318) surpassed it by extending the idea further with explicit search.
 
 Please feel free to contact me about Hanabi strategies, or this framework.
-
-Most similar projects I am aware of:
-- https://github.com/rjtobin/HanSim (written for the paper mentioned above)
-- https://github.com/Quuxplusone/Hanabi
 
 ## Setup
 
@@ -75,3 +71,13 @@ On the first 20000 seeds, we have these scores and win rates (average ± standar
 |         | 90.59 ± 0.21 % | 98.17 ± 0.09 % | 97.76 ± 0.10 % | 96.42 ± 0.13 % |
 | info    | 22.5194 ± 0.0125 | 24.7942 ± 0.0039 | 24.9354 ± 0.0022 | 24.9220 ± 0.0024 |
 |         | 12.58 ± 0.23 % | 84.46 ± 0.26 % | 95.03 ± 0.15 % | 94.01 ± 0.17 % |
+
+## Other work
+
+Most similar projects I am aware of:
+- https://github.com/rjtobin/HanSim (written for the paper mentioned above which introduces the information strategy)
+- https://github.com/Quuxplusone/Hanabi
+
+Some researchers are trying to solve Hanabi using machine learning techniques:
+- [Initial paper](https://arxiv.org/abs/1902.00506) from DeepMind and Google Brain researchers. See [this Wall Street Journal coverage](https://www.wsj.com/articles/why-the-card-game-hanabi-is-the-next-big-hurdle-for-artificial-intelligence-11553875351)
+- [This paper](https://arxiv.org/abs/1912.02318) from Facebook, code at https://github.com/facebookresearch/Hanabi_SPARTA which includes their machine-learned agent

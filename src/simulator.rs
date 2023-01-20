@@ -1,11 +1,10 @@
-use crossbeam;
 use fnv::FnvHashMap;
 use rand::{self, Rng, SeedableRng};
 use std::fmt;
 
-use game::*;
-use json_output::*;
-use strategy::*;
+use crate::game::*;
+use crate::json_output::*;
+use crate::strategy::*;
 
 fn new_deck(seed: u32) -> Cards {
     let mut deck: Cards = Cards::new();
@@ -25,7 +24,7 @@ fn new_deck(seed: u32) -> Cards {
 
 pub fn simulate_once(
     opts: &GameOptions,
-    game_strategy: Box<GameStrategy>,
+    game_strategy: Box<dyn GameStrategy>,
     seed: u32,
     output_json: bool,
 ) -> (GameState, Option<serde_json::Value>) {
@@ -41,7 +40,7 @@ pub fn simulate_once(
                 game_strategy.initialize(player, &game.get_view(player)),
             )
         })
-        .collect::<FnvHashMap<Player, Box<PlayerStrategy>>>();
+        .collect::<FnvHashMap<Player, Box<dyn PlayerStrategy>>>();
 
     let mut actions = Vec::new();
 
@@ -55,7 +54,7 @@ pub fn simulate_once(
         debug!("{}", game);
 
         let choice = {
-            let mut strategy = strategies.get_mut(&player).unwrap();
+            let strategy = strategies.get_mut(&player).unwrap();
             strategy.decide(&game.get_view(player))
         };
         if output_json {
@@ -75,7 +74,7 @@ pub fn simulate_once(
         let turn = game.process_choice(choice);
 
         for player in game.get_players() {
-            let mut strategy = strategies.get_mut(&player).unwrap();
+            let strategy = strategies.get_mut(&player).unwrap();
             strategy.update(&turn, &game.get_view(player));
         }
     }
@@ -112,14 +111,14 @@ impl Histogram {
     fn insert_many(&mut self, val: Score, count: u32) {
         let new_count = self.get_count(&val) + count;
         self.hist.insert(val, new_count);
-        self.sum += val * (count as u32);
+        self.sum += val * count;
         self.total_count += count;
     }
     pub fn insert(&mut self, val: Score) {
         self.insert_many(val, 1);
     }
     pub fn get_count(&self, val: &Score) -> u32 {
-        *self.hist.get(&val).unwrap_or(&0)
+        *self.hist.get(val).unwrap_or(&0)
     }
     pub fn percentage_with(&self, val: &Score) -> f32 {
         self.get_count(val) as f32 / self.total_count as f32
@@ -149,7 +148,7 @@ impl fmt::Display for Histogram {
         let mut keys = self.hist.keys().collect::<Vec<_>>();
         keys.sort();
         for val in keys {
-            try!(f.write_str(&format!("\n{}: {}", val, self.get_count(val),)));
+            write!(f, "\n{}: {}", val, self.get_count(val))?;
         }
         Ok(())
     }
@@ -239,11 +238,11 @@ where
             lives_histogram.merge(thread_lives_histogram);
         }
 
-        non_perfect_seeds.sort();
+        non_perfect_seeds.sort_unstable();
         SimResult {
             scores: score_histogram,
             lives: lives_histogram,
-            non_perfect_seed: non_perfect_seeds.get(0).cloned(),
+            non_perfect_seed: non_perfect_seeds.first().cloned(),
         }
     })
 }

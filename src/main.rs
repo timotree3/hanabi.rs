@@ -36,7 +36,7 @@ impl log::Log for SimpleLogger {
 }
 
 fn print_usage(program: &str, opts: Options) {
-    print!("{}", opts.usage(&format!("Usage: {} [options]", program)));
+    print!("{}", opts.usage(&format!("Usage: {program} [options]")));
 }
 
 fn main() {
@@ -102,7 +102,7 @@ fn main() {
         Ok(m) => m,
         Err(f) => {
             print_usage(&program, opts);
-            panic!(f.to_string())
+            panic!("{}", f)
         }
     };
     if matches.opt_present("h") {
@@ -118,7 +118,8 @@ fn main() {
         return print!("{}", get_results_table());
     }
 
-    let log_level_str: &str = &matches.opt_str("l").unwrap_or("info".to_string());
+    let l_opt = matches.opt_str("l");
+    let log_level_str = l_opt.as_deref().unwrap_or("info");
     let log_level = match log_level_str {
         "trace" => log::LogLevelFilter::Trace,
         "debug" => log::LogLevelFilter::Debug,
@@ -127,7 +128,7 @@ fn main() {
         "error" => log::LogLevelFilter::Error,
         _ => {
             print_usage(&program, opts);
-            panic!("Unexpected log level argument {}", log_level_str);
+            panic!("Unexpected log level argument {log_level_str}");
         }
     };
 
@@ -137,20 +138,19 @@ fn main() {
     })
     .unwrap();
 
-    let n_trials = u32::from_str(&matches.opt_str("n").unwrap_or("1".to_string())).unwrap();
+    let n_trials = u32::from_str(matches.opt_str("n").as_deref().unwrap_or("1")).unwrap();
     let seed = matches
         .opt_str("s")
         .map(|seed_str| u32::from_str(&seed_str).unwrap());
     let progress_info = matches
         .opt_str("o")
         .map(|freq_str| u32::from_str(&freq_str).unwrap());
-    let n_threads = u32::from_str(&matches.opt_str("t").unwrap_or("1".to_string())).unwrap();
-
+    let n_threads = u32::from_str(matches.opt_str("t").as_deref().unwrap_or("1")).unwrap();
+    let n_players = u32::from_str(matches.opt_str("p").as_deref().unwrap_or("4")).unwrap();
+    let g_opt = matches.opt_str("g");
+    let strategy_str: &str = g_opt.as_deref().unwrap_or("cheat");
     let json_output_pattern = matches.opt_str("j");
     let json_losses_only = matches.opt_present("losses-only");
-
-    let n_players = u32::from_str(&matches.opt_str("p").unwrap_or("4".to_string())).unwrap();
-    let strategy_str: &str = &matches.opt_str("g").unwrap_or("cheat".to_string());
 
     sim_games(
         n_players,
@@ -181,30 +181,30 @@ fn sim_games(
         4 => 4,
         5 => 4,
         _ => {
-            panic!("There should be 2 to 5 players, not {}", n_players);
+            panic!("There should be 2 to 5 players, not {n_players}");
         }
     };
 
     let game_opts = game::GameOptions {
         num_players: n_players,
-        hand_size: hand_size,
+        hand_size,
         num_hints: 8,
         num_lives: 3,
         // hanabi rules are a bit ambiguous about whether you can give hints that match 0 cards
         allow_empty_hints: false,
     };
 
-    let strategy_config: Box<strategy::GameStrategyConfig + Sync> = match strategy_str {
+    let strategy_config: Box<dyn strategy::GameStrategyConfig + Sync> = match strategy_str {
         "random" => Box::new(strategies::examples::RandomStrategyConfig {
             hint_probability: 0.4,
             play_probability: 0.2,
-        }) as Box<strategy::GameStrategyConfig + Sync>,
+        }) as Box<dyn strategy::GameStrategyConfig + Sync>,
         "cheat" => Box::new(strategies::cheating::CheatingStrategyConfig::new())
-            as Box<strategy::GameStrategyConfig + Sync>,
+            as Box<dyn strategy::GameStrategyConfig + Sync>,
         "info" => Box::new(strategies::information::InformationStrategyConfig::new())
-            as Box<strategy::GameStrategyConfig + Sync>,
+            as Box<dyn strategy::GameStrategyConfig + Sync>,
         _ => {
-            panic!("Unexpected strategy argument {}", strategy_str);
+            panic!("Unexpected strategy argument {strategy_str}");
         }
     };
     simulator::simulate(
@@ -227,19 +227,18 @@ fn get_results_table() -> String {
     let n_threads = 8;
 
     let intro = format!(
-        "On the first {} seeds, we have these scores and win rates (average ± standard error):\n\n",
-        n_trials
+        "On the first {n_trials} seeds, we have these scores and win rates (average ± standard error):\n\n"
     );
-    let format_name = |x| format!(" {:7} ", x);
-    let format_players = |x| format!("   {}p    ", x);
-    let format_percent = |x, stderr| format!(" {:05.2} ± {:.2} % ", x, stderr);
-    let format_score = |x, stderr| format!(" {:07.4} ± {:.4} ", x, stderr);
+    let format_name = |x| format!(" {x:7} ");
+    let format_players = |x| format!("   {x}p    ");
+    let format_percent = |x, stderr| format!(" {x:05.2} ± {stderr:.2} % ");
+    let format_score = |x, stderr| format!(" {x:07.4} ± {stderr:.4} ");
     let space = String::from("         ");
     let dashes = String::from("---------");
     let dashes_long = String::from("------------------");
     type TwoLines = (String, String);
     fn make_twolines(
-        player_nums: &Vec<u32>,
+        player_nums: &[u32],
         head: TwoLines,
         make_block: &dyn Fn(u32) -> TwoLines,
     ) -> TwoLines {
@@ -259,14 +258,12 @@ fn get_results_table() -> String {
     }
     fn concat_twolines(body: Vec<TwoLines>) -> String {
         body.into_iter().fold(String::default(), |output, (a, b)| {
-            (output + &a + "\n" + &b + "\n")
+            output + &a + "\n" + &b + "\n"
         })
     }
-    let header = make_twolines(
-        &player_nums,
-        (space.clone(), dashes.clone()),
-        &|n_players| (format_players(n_players), dashes_long.clone()),
-    );
+    let header = make_twolines(&player_nums, (space.clone(), dashes), &|n_players| {
+        (format_players(n_players), dashes_long.clone())
+    });
     let mut body = strategies
         .iter()
         .map(|strategy| {
@@ -319,7 +316,7 @@ time cargo run --release -- --write-results-table
     let readme_init = {
         let parts = readme_contents.splitn(2, separator).collect::<Vec<_>>();
         if parts.len() != 2 {
-            panic!("{} has been modified in the Results section!", readme);
+            panic!("{readme} has been modified in the Results section!");
         }
         parts[0]
     };

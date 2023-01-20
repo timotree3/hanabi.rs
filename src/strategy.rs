@@ -28,4 +28,3 @@ pub trait GameStrategy {
 pub trait GameStrategyConfig {
     fn initialize(&self, &GameOptions) -> Box<GameStrategy>;
 }
-

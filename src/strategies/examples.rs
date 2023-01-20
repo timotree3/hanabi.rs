@@ -1,6 +1,6 @@
-use strategy::*;
 use game::*;
 use rand::{self, Rng};
+use strategy::*;
 
 // dummy, terrible strategy, as an example
 #[derive(Clone)]
@@ -40,14 +40,19 @@ pub struct RandomStrategyPlayer {
 
 impl PlayerStrategy for RandomStrategyPlayer {
     fn name(&self) -> String {
-        format!("random(hint={}, play={})", self.hint_probability, self.play_probability)
+        format!(
+            "random(hint={}, play={})",
+            self.hint_probability, self.play_probability
+        )
     }
     fn decide(&mut self, view: &BorrowedGameView) -> TurnChoice {
         let p = rand::random::<f64>();
         if p < self.hint_probability {
             if view.board.hints_remaining > 0 {
                 let hint_player = view.board.player_to_left(&self.me);
-                let hint_card = rand::thread_rng().choose(&view.get_hand(&hint_player)).unwrap();
+                let hint_card = rand::thread_rng()
+                    .choose(&view.get_hand(&hint_player))
+                    .unwrap();
                 let hinted = {
                     if rand::random() {
                         // hint a color
@@ -69,6 +74,5 @@ impl PlayerStrategy for RandomStrategyPlayer {
             TurnChoice::Discard(0)
         }
     }
-    fn update(&mut self, _: &TurnRecord, _: &BorrowedGameView) {
-    }
+    fn update(&mut self, _: &TurnRecord, _: &BorrowedGameView) {}
 }

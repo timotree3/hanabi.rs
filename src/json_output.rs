@@ -2,7 +2,10 @@ use game::*;
 use serde_json::*;
 
 fn color_value(color: &Color) -> usize {
-    COLORS.iter().position(|&card_color| &card_color == color).unwrap()
+    COLORS
+        .iter()
+        .position(|&card_color| &card_color == color)
+        .unwrap()
 }
 
 fn card_to_json(card: &Card) -> serde_json::Value {
@@ -43,7 +46,11 @@ pub fn action_discard((i, _card): &AnnotatedCard) -> serde_json::Value {
     })
 }
 
-pub fn json_format(deck: &Cards, actions: &Vec<serde_json::Value>, players: &Vec<String>) -> serde_json::Value {
+pub fn json_format(
+    deck: &Cards,
+    actions: &Vec<serde_json::Value>,
+    players: &Vec<String>,
+) -> serde_json::Value {
     json!({
         "variant": "No Variant",
         "players": players,

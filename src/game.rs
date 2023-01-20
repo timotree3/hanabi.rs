@@ -11,26 +11,31 @@ pub const COLORS: [Color; NUM_COLORS] = ['r', 'y', 'g', 'b', 'w'];
 pub type Value = u32;
 // list of values, assumed to be small to large
 pub const NUM_VALUES: usize = 5;
-pub const VALUES : [Value; NUM_VALUES] = [1, 2, 3, 4, 5];
-pub const FINAL_VALUE : Value = 5;
+pub const VALUES: [Value; NUM_VALUES] = [1, 2, 3, 4, 5];
+pub const FINAL_VALUE: Value = 5;
 
 pub fn get_count_for_value(value: Value) -> u32 {
     match value {
-        1         => 3,
+        1 => 3,
         2 | 3 | 4 => 2,
-        5         => 1,
-        _ => { panic!(format!("Unexpected value: {}", value)); }
+        5 => 1,
+        _ => {
+            panic!(format!("Unexpected value: {}", value));
+        }
     }
 }
 
-#[derive(Clone,PartialEq,Eq,Hash,Ord,PartialOrd)]
+#[derive(Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Card {
     pub color: Color,
     pub value: Value,
 }
 impl Card {
     pub fn new(color: Color, value: Value) -> Card {
-        Card { color: color, value: value }
+        Card {
+            color: color,
+            value: value,
+        }
     }
 }
 impl fmt::Display for Card {
@@ -44,7 +49,7 @@ impl fmt::Debug for Card {
     }
 }
 
-#[derive(Debug,Clone,Eq,PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CardCounts {
     counts: FnvHashMap<Card, u32>,
 }
@@ -56,9 +61,7 @@ impl CardCounts {
                 counts.insert(Card::new(color, value), 0);
             }
         }
-        CardCounts {
-            counts: counts,
-        }
+        CardCounts { counts: counts }
     }
 
     pub fn get_count(&self, card: &Card) -> u32 {
@@ -78,15 +81,11 @@ impl CardCounts {
 impl fmt::Display for CardCounts {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for &color in COLORS.iter() {
-            try!(f.write_str(&format!(
-                "{}: ", color,
-            )));
+            try!(f.write_str(&format!("{}: ", color,)));
             for &value in VALUES.iter() {
                 let count = self.get_count(&Card::new(color, value));
                 let total = get_count_for_value(value);
-                try!(f.write_str(&format!(
-                    "{}/{} {}s", count, total, value
-                )));
+                try!(f.write_str(&format!("{}/{} {}s", count, total, value)));
                 if value != FINAL_VALUE {
                     try!(f.write_str(", "));
                 }
@@ -99,7 +98,7 @@ impl fmt::Display for CardCounts {
 
 pub type Cards = Vec<Card>;
 
-#[derive(Debug,Clone,Eq,PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Discard {
     pub cards: Cards,
     counts: CardCounts,
@@ -137,7 +136,7 @@ impl fmt::Display for Discard {
 pub type Score = u32;
 pub const PERFECT_SCORE: Score = (NUM_COLORS * NUM_VALUES) as u32;
 
-#[derive(Debug,Clone,Eq,PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Firework {
     pub color: Color,
     pub top: Value,
@@ -151,7 +150,11 @@ impl Firework {
     }
 
     pub fn needed_value(&self) -> Option<Value> {
-        if self.complete() { None } else { Some(self.top + 1) }
+        if self.complete() {
+            None
+        } else {
+            Some(self.top + 1)
+        }
     }
 
     pub fn score(&self) -> Score {
@@ -184,7 +187,7 @@ impl fmt::Display for Firework {
     }
 }
 
-#[derive(Debug,Clone,Hash,PartialEq,Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Hinted {
     Color(Color),
     Value(Value),
@@ -192,20 +195,24 @@ pub enum Hinted {
 impl fmt::Display for Hinted {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            &Hinted::Color(color) => { write!(f, "{}", color) }
-            &Hinted::Value(value) => { write!(f, "{}", value) }
+            &Hinted::Color(color) => {
+                write!(f, "{}", color)
+            }
+            &Hinted::Value(value) => {
+                write!(f, "{}", value)
+            }
         }
     }
 }
 
-#[derive(Debug,Clone,Eq,PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Hint {
     pub player: Player,
     pub hinted: Hinted,
 }
 
 // represents the choice a player made in a given turn
-#[derive(Debug,Clone,Eq,PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum TurnChoice {
     Hint(Hint),
     Discard(usize), // index of card to discard
@@ -213,7 +220,7 @@ pub enum TurnChoice {
 }
 
 // represents what happened in a turn
-#[derive(Debug,Clone,Eq,PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum TurnResult {
     Hint(Vec<bool>),  // vector of whether each was in the hint
     Discard(Card),    // card discarded
@@ -221,7 +228,7 @@ pub enum TurnResult {
 }
 
 // represents a turn taken in the game
-#[derive(Debug,Clone,Eq,PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct TurnRecord {
     pub player: Player,
     pub choice: TurnChoice,
@@ -243,7 +250,7 @@ pub struct GameOptions {
 
 // State of everything except the player's hands
 // Is all completely common knowledge
-#[derive(Debug,Clone,Eq,PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct BoardState {
     pub deck_size: u32,
     pub total_cards: u32,
@@ -269,9 +276,10 @@ pub struct BoardState {
 }
 impl BoardState {
     pub fn new(opts: &GameOptions, deck_size: u32) -> BoardState {
-        let fireworks = COLORS.iter().map(|&color| {
-            (color, Firework::new(color))
-        }).collect::<FnvHashMap<_, _>>();
+        let fireworks = COLORS
+            .iter()
+            .map(|&color| (color, Firework::new(color)))
+            .collect::<FnvHashMap<_, _>>();
 
         BoardState {
             deck_size: deck_size,
@@ -324,7 +332,7 @@ impl BoardState {
         for &value in VALUES.iter() {
             if value < needed {
                 // already have these cards
-                continue
+                continue;
             }
             let needed_card = Card::new(color, value);
             if self.discard.has_all(&needed_card) {
@@ -374,7 +382,10 @@ impl BoardState {
     }
 
     pub fn score(&self) -> Score {
-        self.fireworks.iter().map(|(_, firework)| firework.score()).fold(0, |a, b| a + b)
+        self.fireworks
+            .iter()
+            .map(|(_, firework)| firework.score())
+            .fold(0, |a, b| a + b)
     }
 
     pub fn discard_size(&self) -> u32 {
@@ -389,34 +400,36 @@ impl BoardState {
     }
 
     pub fn is_over(&self) -> bool {
-        (self.lives_remaining == 0) || (self.deckless_turns_remaining == 0) || (self.score() == PERFECT_SCORE)
+        (self.lives_remaining == 0)
+            || (self.deckless_turns_remaining == 0)
+            || (self.score() == PERFECT_SCORE)
     }
 }
 impl fmt::Display for BoardState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.is_over() {
-            try!(f.write_str(&format!(
-                "Turn {} (GAME ENDED):\n", self.turn
-            )));
+            try!(f.write_str(&format!("Turn {} (GAME ENDED):\n", self.turn)));
         } else {
             try!(f.write_str(&format!(
-                "Turn {} (Player {}'s turn):\n", self.turn, self.player
+                "Turn {} (Player {}'s turn):\n",
+                self.turn, self.player
             )));
         }
 
-        try!(f.write_str(&format!(
-            "{} cards remaining in deck\n", self.deck_size
-        )));
+        try!(f.write_str(&format!("{} cards remaining in deck\n", self.deck_size)));
         if self.deck_size == 0 {
             try!(f.write_str(&format!(
-                "Deck is empty.  {} turns remaining in game\n", self.deckless_turns_remaining
+                "Deck is empty.  {} turns remaining in game\n",
+                self.deckless_turns_remaining
             )));
         }
         try!(f.write_str(&format!(
-            "{}/{} hints remaining\n", self.hints_remaining, self.hints_total
+            "{}/{} hints remaining\n",
+            self.hints_remaining, self.hints_total
         )));
         try!(f.write_str(&format!(
-            "{}/{} lives remaining\n", self.lives_remaining, self.lives_total
+            "{}/{} lives remaining\n",
+            self.lives_remaining, self.lives_total
         )));
         try!(f.write_str("Fireworks:\n"));
         for &color in COLORS.iter() {
@@ -446,28 +459,30 @@ pub trait GameView {
     }
 
     fn has_card(&self, player: &Player, card: &Card) -> bool {
-        self.get_hand(player).iter().position(|other_card| {
-            card == other_card
-        }).is_some()
+        self.get_hand(player)
+            .iter()
+            .position(|other_card| card == other_card)
+            .is_some()
     }
 
     fn get_other_players(&self) -> Vec<Player> {
-        self.get_board().get_players().filter(|&player| {
-            player != self.me()
-        }).collect()
+        self.get_board()
+            .get_players()
+            .filter(|&player| player != self.me())
+            .collect()
     }
 
     fn can_see(&self, card: &Card) -> bool {
-        self.get_other_players().iter().any(|player| {
-            self.has_card(&player, card)
-        })
+        self.get_other_players()
+            .iter()
+            .any(|player| self.has_card(&player, card))
     }
 
     fn someone_else_can_play(&self) -> bool {
         self.get_other_players().iter().any(|player| {
-            self.get_hand(&player).iter().any(|card| {
-                self.get_board().is_playable(card)
-            })
+            self.get_hand(&player)
+                .iter()
+                .any(|card| self.get_board().is_playable(card))
         })
     }
 }
@@ -483,7 +498,7 @@ pub struct BorrowedGameView<'a> {
     // board state
     pub board: &'a BoardState,
 }
-impl <'a> GameView for BorrowedGameView<'a> {
+impl<'a> GameView for BorrowedGameView<'a> {
     fn me(&self) -> Player {
         self.player
     }
@@ -512,10 +527,11 @@ pub struct OwnedGameView {
 }
 impl OwnedGameView {
     pub fn clone_from(borrowed_view: &BorrowedGameView) -> OwnedGameView {
-        let other_hands = borrowed_view.other_hands.iter()
-            .map(|(&other_player, &player_state)| {
-                (other_player, player_state.clone())
-            }).collect::<FnvHashMap<_, _>>();
+        let other_hands = borrowed_view
+            .other_hands
+            .iter()
+            .map(|(&other_player, &player_state)| (other_player, player_state.clone()))
+            .collect::<FnvHashMap<_, _>>();
 
         OwnedGameView {
             player: borrowed_view.player.clone(),
@@ -552,7 +568,7 @@ pub type AnnotatedCard = (usize, Card);
 pub type AnnotatedCards = Vec<AnnotatedCard>;
 
 fn strip_annotations(cards: &AnnotatedCards) -> Cards {
-    cards.iter().map(|(_i, card)| { card.clone() }).collect()
+    cards.iter().map(|(_i, card)| card.clone()).collect()
 }
 
 // complete game state (known to nobody!)
@@ -592,18 +608,22 @@ impl GameState {
         let mut deck: AnnotatedCards = deck.into_iter().rev().enumerate().rev().collect();
         let mut board = BoardState::new(opts, deck.len() as u32);
 
-        let hands =
-            (0..opts.num_players).map(|player| {
-                let hand = (0..opts.hand_size).map(|_| {
-                    // we can assume the deck is big enough to draw initial hands
-                    board.deck_size -= 1;
-                    deck.pop().unwrap()
-                }).collect::<Vec<_>>();
+        let hands = (0..opts.num_players)
+            .map(|player| {
+                let hand = (0..opts.hand_size)
+                    .map(|_| {
+                        // we can assume the deck is big enough to draw initial hands
+                        board.deck_size -= 1;
+                        deck.pop().unwrap()
+                    })
+                    .collect::<Vec<_>>();
                 (player, hand)
-            }).collect::<FnvHashMap<_, _>>();
-        let unannotated_hands = hands.iter().map(|(player, hand)| {
-            (player.clone(), strip_annotations(hand))
-            }).collect::<FnvHashMap<_, _>>();
+            })
+            .collect::<FnvHashMap<_, _>>();
+        let unannotated_hands = hands
+            .iter()
+            .map(|(player, hand)| (player.clone(), strip_annotations(hand)))
+            .collect::<FnvHashMap<_, _>>();
 
         GameState {
             hands,
@@ -643,15 +663,15 @@ impl GameState {
 
     fn update_player_hand(&mut self) {
         let player = self.board.player.clone();
-        self.unannotated_hands.insert(player, strip_annotations(self.hands.get(&player).unwrap()));
+        self.unannotated_hands
+            .insert(player, strip_annotations(self.hands.get(&player).unwrap()));
     }
 
     // takes a card from the player's hand, and replaces it if possible
     fn take_from_hand(&mut self, index: usize) -> Card {
         // FIXME this code looks like it's awfully contorted in order to please the borrow checker.
         // Can we have this look nicer?
-        let result =
-        {
+        let result = {
             let ref mut hand = self.hands.get_mut(&self.board.player).unwrap();
             hand.remove(index).1
         };
@@ -679,26 +699,34 @@ impl GameState {
         let turn_result = {
             match choice {
                 TurnChoice::Hint(ref hint) => {
-                    assert!(self.board.hints_remaining > 0,
-                            "Tried to hint with no hints remaining");
+                    assert!(
+                        self.board.hints_remaining > 0,
+                        "Tried to hint with no hints remaining"
+                    );
                     self.board.hints_remaining -= 1;
                     debug!("Hint to player {}, about {}", hint.player, hint.hinted);
 
-                    assert!(self.board.player != hint.player,
-                            format!("Player {} gave a hint to himself", hint.player));
+                    assert!(
+                        self.board.player != hint.player,
+                        format!("Player {} gave a hint to himself", hint.player)
+                    );
 
                     let hand = self.hands.get(&hint.player).unwrap();
                     let results = match hint.hinted {
-                        Hinted::Color(color) => {
-                            hand.iter().map(|(_i, card)| { card.color == color }).collect::<Vec<_>>()
-                        }
-                        Hinted::Value(value) => {
-                            hand.iter().map(|(_i, card)| { card.value == value }).collect::<Vec<_>>()
-                        }
+                        Hinted::Color(color) => hand
+                            .iter()
+                            .map(|(_i, card)| card.color == color)
+                            .collect::<Vec<_>>(),
+                        Hinted::Value(value) => hand
+                            .iter()
+                            .map(|(_i, card)| card.value == value)
+                            .collect::<Vec<_>>(),
                     };
                     if !self.board.allow_empty_hints {
-                        assert!(results.iter().any(|matched| *matched),
-                                "Tried hinting an empty hint");
+                        assert!(
+                            results.iter().any(|matched| *matched),
+                            "Tried hinting an empty hint"
+                        );
                     }
 
                     TurnResult::Hint(results)
@@ -714,10 +742,7 @@ impl GameState {
                 TurnChoice::Play(index) => {
                     let card = self.take_from_hand(index);
 
-                    debug!(
-                        "Playing card at position {}, which is {}",
-                        index, card
-                    );
+                    debug!("Playing card at position {}, which is {}", index, card);
                     let playable = self.board.is_playable(&card);
                     if playable {
                         {
@@ -758,7 +783,10 @@ impl GameState {
             let cur = self.board.player;
             self.board.player_to_left(&cur)
         };
-        assert_eq!((self.board.turn - 1) % self.board.num_players, self.board.player);
+        assert_eq!(
+            (self.board.turn - 1) % self.board.num_players,
+            self.board.player
+        );
 
         turn_record
     }

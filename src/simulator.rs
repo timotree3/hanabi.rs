@@ -1,11 +1,11 @@
-use rand::{self, Rng, SeedableRng};
-use fnv::FnvHashMap;
-use std::fmt;
 use crossbeam;
+use fnv::FnvHashMap;
+use rand::{self, Rng, SeedableRng};
+use std::fmt;
 
 use game::*;
-use strategy::*;
 use json_output::*;
+use strategy::*;
 
 fn new_deck(seed: u32) -> Cards {
     let mut deck: Cards = Cards::new();
@@ -16,28 +16,32 @@ fn new_deck(seed: u32) -> Cards {
                 deck.push(Card::new(color, value));
             }
         }
-    };
+    }
 
     rand::ChaChaRng::from_seed(&[seed]).shuffle(&mut deck[..]);
     debug!("Deck: {:?}", deck);
     deck
 }
 
-
 pub fn simulate_once(
-        opts: &GameOptions,
-        game_strategy: Box<GameStrategy>,
-        seed: u32,
-        output_json: bool,
-    ) -> (GameState, Option<serde_json::Value>) {
-
+    opts: &GameOptions,
+    game_strategy: Box<GameStrategy>,
+    seed: u32,
+    output_json: bool,
+) -> (GameState, Option<serde_json::Value>) {
     let deck = new_deck(seed);
 
     let mut game = GameState::new(opts, deck.clone());
 
-    let mut strategies = game.get_players().map(|player| {
-        (player, game_strategy.initialize(player, &game.get_view(player)))
-    }).collect::<FnvHashMap<Player, Box<PlayerStrategy>>>();
+    let mut strategies = game
+        .get_players()
+        .map(|player| {
+            (
+                player,
+                game_strategy.initialize(player, &game.get_view(player)),
+            )
+        })
+        .collect::<FnvHashMap<Player, Box<PlayerStrategy>>>();
 
     let mut actions = Vec::new();
 
@@ -50,27 +54,23 @@ pub fn simulate_once(
         debug!("=======================================================");
         debug!("{}", game);
 
-
         let choice = {
             let mut strategy = strategies.get_mut(&player).unwrap();
             strategy.decide(&game.get_view(player))
         };
         if output_json {
             actions.push(match choice {
-                TurnChoice::Hint(ref hint) =>  {
-                    action_clue(hint)
-                }
+                TurnChoice::Hint(ref hint) => action_clue(hint),
                 TurnChoice::Play(index) => {
                     let card = &game.hands[&player][index];
                     action_play(card)
                 }
-                TurnChoice::Discard(index) =>  {
+                TurnChoice::Discard(index) => {
                     let card = &game.hands[&player][index];
                     action_discard(card)
                 }
             });
         }
-
 
         let turn = game.process_choice(choice);
 
@@ -84,9 +84,10 @@ pub fn simulate_once(
     debug!("Final state:\n{}", game);
     debug!("SCORE: {:?}", game.score());
     let json_output = if output_json {
-        let player_names = game.get_players().map(|player| {
-            strategies[&player].name()
-        }).collect();
+        let player_names = game
+            .get_players()
+            .map(|player| strategies[&player].name())
+            .collect();
         Some(json_format(&deck, &actions, &player_names))
     } else {
         None
@@ -148,26 +149,25 @@ impl fmt::Display for Histogram {
         let mut keys = self.hist.keys().collect::<Vec<_>>();
         keys.sort();
         for val in keys {
-            try!(f.write_str(&format!(
-                "\n{}: {}", val, self.get_count(val),
-            )));
+            try!(f.write_str(&format!("\n{}: {}", val, self.get_count(val),)));
         }
         Ok(())
     }
 }
 
 pub fn simulate<T: ?Sized>(
-        opts: &GameOptions,
-        strat_config: Box<T>,
-        first_seed_opt: Option<u32>,
-        n_trials: u32,
-        n_threads: u32,
-        progress_info: Option<u32>,
-        json_output_pattern: Option<String>,
-        json_losses_only: bool,
-    ) -> SimResult
-    where T: GameStrategyConfig + Sync {
-
+    opts: &GameOptions,
+    strat_config: Box<T>,
+    first_seed_opt: Option<u32>,
+    n_trials: u32,
+    n_threads: u32,
+    progress_info: Option<u32>,
+    json_output_pattern: Option<String>,
+    json_losses_only: bool,
+) -> SimResult
+where
+    T: GameStrategyConfig + Sync,
+{
     let first_seed = first_seed_opt.unwrap_or_else(|| rand::thread_rng().next_u32());
 
     let strat_config_ref = &strat_config;
@@ -176,7 +176,7 @@ pub fn simulate<T: ?Sized>(
         let mut join_handles = Vec::new();
         for i in 0..n_threads {
             let start = first_seed + ((n_trials * i) / n_threads);
-            let end = first_seed + ((n_trials * (i+1)) / n_threads);
+            let end = first_seed + ((n_trials * (i + 1)) / n_threads);
             join_handles.push(scope.spawn(move || {
                 if progress_info.is_some() {
                     info!("Thread {} spawned: seeds {} to {}", i, start, end);
@@ -188,25 +188,33 @@ pub fn simulate<T: ?Sized>(
 
                 for seed in start..end {
                     if let Some(progress_info_frequency) = progress_info {
-                        if (seed > start) && ((seed-start) % progress_info_frequency == 0) {
+                        if (seed > start) && ((seed - start) % progress_info_frequency == 0) {
                             info!(
                                 "Thread {}, Trials: {}, Stats so far: {} score, {} lives, {}% win",
-                                i, seed-start, score_histogram.average(), lives_histogram.average(),
+                                i,
+                                seed - start,
+                                score_histogram.average(),
+                                lives_histogram.average(),
                                 score_histogram.percentage_with(&PERFECT_SCORE) * 100.0
                             );
                         }
                     }
-                    let (game, json_output) = simulate_once(&opts,
-                                                      strat_config_ref.initialize(&opts),
-                                                      seed,
-                                                      json_output_pattern_ref.is_some());
+                    let (game, json_output) = simulate_once(
+                        &opts,
+                        strat_config_ref.initialize(&opts),
+                        seed,
+                        json_output_pattern_ref.is_some(),
+                    );
                     let score = game.score();
                     lives_histogram.insert(game.board.lives_remaining);
                     score_histogram.insert(score);
-                    if score != PERFECT_SCORE { non_perfect_seeds.push(seed); }
+                    if score != PERFECT_SCORE {
+                        non_perfect_seeds.push(seed);
+                    }
                     if let Some(file_pattern) = json_output_pattern_ref {
                         if !(score == PERFECT_SCORE && json_losses_only) {
-                            let file_pattern = file_pattern.clone().replace("%s", &seed.to_string());
+                            let file_pattern =
+                                file_pattern.clone().replace("%s", &seed.to_string());
                             let path = std::path::Path::new(&file_pattern);
                             let file = std::fs::File::create(path).unwrap();
                             serde_json::to_writer(file, &json_output.unwrap()).unwrap();
@@ -220,11 +228,12 @@ pub fn simulate<T: ?Sized>(
             }));
         }
 
-        let mut non_perfect_seeds : Vec<u32> = Vec::new();
+        let mut non_perfect_seeds: Vec<u32> = Vec::new();
         let mut score_histogram = Histogram::new();
         let mut lives_histogram = Histogram::new();
         for join_handle in join_handles {
-            let (thread_non_perfect_seeds, thread_score_histogram, thread_lives_histogram) = join_handle.join();
+            let (thread_non_perfect_seeds, thread_score_histogram, thread_lives_histogram) =
+                join_handle.join();
             non_perfect_seeds.extend(thread_non_perfect_seeds.iter());
             score_histogram.merge(thread_score_histogram);
             lives_histogram.merge(thread_lives_histogram);
@@ -252,7 +261,7 @@ impl SimResult {
 
     pub fn percent_perfect_stderr(&self) -> f32 {
         let pp = self.percent_perfect() / 100.0;
-        let stdev = (pp*(1.0 - pp) / ((self.scores.total_count - 1) as f32)).sqrt();
+        let stdev = (pp * (1.0 - pp) / ((self.scores.total_count - 1) as f32)).sqrt();
         stdev * 100.0
     }
 

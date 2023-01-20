@@ -199,8 +199,8 @@ where
                         }
                     }
                     let (game, json_output) = simulate_once(
-                        &opts,
-                        strat_config_ref.initialize(&opts),
+                        opts,
+                        strat_config_ref.initialize(opts),
                         seed,
                         json_output_pattern_ref.is_some(),
                     );

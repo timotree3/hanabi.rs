@@ -589,7 +589,7 @@ impl GameState {
             .collect::<FnvHashMap<_, _>>();
         let unannotated_hands = hands
             .iter()
-            .map(|(player, hand)| (player.clone(), strip_annotations(hand)))
+            .map(|(player, hand)| (*player, strip_annotations(hand)))
             .collect::<FnvHashMap<_, _>>();
 
         GameState {
@@ -629,7 +629,7 @@ impl GameState {
     }
 
     fn update_player_hand(&mut self) {
-        let player = self.board.player.clone();
+        let player = self.board.player;
         self.unannotated_hands
             .insert(player, strip_annotations(self.hands.get(&player).unwrap()));
     }

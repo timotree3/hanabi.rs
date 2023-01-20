@@ -1,9 +1,9 @@
-use std::rc::Rc;
-use std::cell::{RefCell};
 use fnv::{FnvHashMap, FnvHashSet};
+use std::cell::RefCell;
+use std::rc::Rc;
 
-use strategy::*;
 use game::*;
+use strategy::*;
 
 // strategy that explicitly cheats by using Rc/RefCell
 // serves as a reference point for other strategies
@@ -44,9 +44,9 @@ impl CheatingStrategy {
 impl GameStrategy for CheatingStrategy {
     fn initialize(&self, player: Player, view: &BorrowedGameView) -> Box<dyn PlayerStrategy> {
         for (&player, &hand) in &view.other_hands {
-            self.player_hands_cheat.borrow_mut().insert(
-                player, hand.clone()
-            );
+            self.player_hands_cheat
+                .borrow_mut()
+                .insert(player, hand.clone());
         }
         Box::new(CheatingPlayerStrategy {
             player_hands_cheat: self.player_hands_cheat.clone(),
@@ -64,9 +64,9 @@ impl CheatingPlayerStrategy {
     fn inform_last_player_cards(&self, view: &BorrowedGameView) {
         let next = view.board.player_to_right(&self.me);
         let their_hand = *view.other_hands.get(&next).unwrap();
-        self.player_hands_cheat.borrow_mut().insert(
-            next, their_hand.clone()
-        );
+        self.player_hands_cheat
+            .borrow_mut()
+            .insert(next, their_hand.clone());
     }
 
     // give a throwaway hint - we only do this when we have nothing to do
@@ -75,7 +75,7 @@ impl CheatingPlayerStrategy {
         let hint_card = &view.get_hand(&hint_player).first().unwrap();
         TurnChoice::Hint(Hint {
             player: hint_player,
-            hinted: Hinted::Value(hint_card.value)
+            hinted: Hinted::Value(hint_card.value),
         })
     }
 
@@ -93,12 +93,14 @@ impl CheatingPlayerStrategy {
 
     // given a hand of cards, represents how badly it will need to play things
     fn hand_play_value(&self, view: &BorrowedGameView, hand: &Cards) -> u32 {
-        hand.iter().map(|card| self.card_play_value(view, card)).sum()
+        hand.iter()
+            .map(|card| self.card_play_value(view, card))
+            .sum()
     }
 
     // how badly do we need to play a particular card
     fn get_play_score(&self, view: &BorrowedGameView, card: &Card) -> i32 {
-        let hands  = self.player_hands_cheat.borrow();
+        let hands = self.player_hands_cheat.borrow();
         let my_hand = hands.get(&self.me).unwrap();
 
         let my_hand_value = self.hand_play_value(view, my_hand);
@@ -108,7 +110,7 @@ impl CheatingPlayerStrategy {
                 let their_hand_value = self.hand_play_value(view, hands.get(&player).unwrap());
                 // they can play this card, and have less urgent plays than i do
                 if their_hand_value < my_hand_value {
-                    return 10 - (card.value as i32)
+                    return 10 - (card.value as i32);
                 }
             }
         }
@@ -139,9 +141,11 @@ impl PlayerStrategy for CheatingPlayerStrategy {
 
         let hands = self.player_hands_cheat.borrow();
         let my_hand = hands.get(&self.me).unwrap();
-        let playable_cards = my_hand.iter().enumerate().filter(|&(_, card)| {
-            view.board.is_playable(card)
-        }).collect::<Vec<_>>();
+        let playable_cards = my_hand
+            .iter()
+            .enumerate()
+            .filter(|&(_, card)| view.board.is_playable(card))
+            .collect::<Vec<_>>();
 
         if !playable_cards.is_empty() {
             // play the best playable card
@@ -156,15 +160,14 @@ impl PlayerStrategy for CheatingPlayerStrategy {
                     play_score = score;
                 }
             }
-            return TurnChoice::Play(index)
+            return TurnChoice::Play(index);
         }
 
         // discard threshold is how many cards we're willing to discard
         // such that if we only played,
         // we would not reach the final countdown round
         // e.g. 50 total, 25 to play, 20 in hand
-        let discard_threshold =
-            view.board.total_cards
+        let discard_threshold = view.board.total_cards
             - (COLORS.len() * VALUES.len()) as u32
             - (view.board.num_players * view.board.hand_size);
         if view.board.discard_size() <= discard_threshold {
@@ -204,6 +207,5 @@ impl PlayerStrategy for CheatingPlayerStrategy {
         }
         TurnChoice::Discard(index)
     }
-    fn update(&mut self, _: &TurnRecord, _: &BorrowedGameView) {
-    }
+    fn update(&mut self, _: &TurnRecord, _: &BorrowedGameView) {}
 }

@@ -50,6 +50,13 @@ struct Note {
     clued: bool,
     play: bool,
     trash: bool,
+    /// Has this card ever been given "permission to discard"?
+    ptd: bool,
+}
+impl Note {
+    fn is_action(&self) -> bool {
+        self.play || self.trash || self.ptd
+    }
 }
 
 impl<'game> Public<'game> {
@@ -173,6 +180,34 @@ impl<'game> Public<'game> {
         }
 
         None
+    }
+
+    fn interpret_play(&mut self, card_id: CardId) {
+        assert!(self.note(card_id).play);
+        // If the next player is not loaded, give them PTD
+        let next_player = self.board.player_to_right(self.board.player);
+        // TODO: What if this play was known to give them an action
+        if !self.is_loaded(next_player) {
+            let newest_card_id = *self.hands[next_player].last().unwrap();
+            self.note_mut(newest_card_id).ptd = true;
+        }
+    }
+
+    fn interpret_discard(&mut self, card_id: CardId) {
+        assert!(self.note(card_id).trash || self.note(card_id).ptd);
+        // If the next player is not loaded, give them PTD
+        let next_player = self.board.player_to_right(self.board.player);
+        // TODO: What if this play was known to give them an action
+        if !self.is_loaded(next_player) {
+            let newest_card_id = *self.hands[next_player].last().unwrap();
+            self.note_mut(newest_card_id).ptd = true;
+        }
+    }
+
+    fn is_loaded(&self, player: Player) -> bool {
+        self.hands[player]
+            .iter()
+            .any(|&card_id| self.note(card_id).is_action())
     }
 
     fn reveal_copy(&mut self, card: Card, card_id: CardId) {
@@ -385,21 +420,29 @@ impl<'game> PlayerStrategy<'game> for RsPlayer<'game> {
     }
 
     fn decide(&mut self, view: &PlayerView<'_>) -> TurnChoice {
-        let my_play = self.public.hands[view.me()]
-            .iter()
+        let mut my_hand = self.public.hands[view.me()].iter();
+        let my_play = my_hand
+            .clone()
             .position(|&card_id| self.public.note(card_id).play);
-        let my_trash = self.public.hands[view.me()]
-            .iter()
+        let my_trash = my_hand
+            .clone()
             .position(|&card_id| self.public.note(card_id).trash);
-        let my_chop = view.hand_size(view.me()) - 1;
+        let my_ptd = my_hand.position(|&card_id| self.public.note(card_id).ptd);
 
         let best_hint = self.best_hint(view);
 
-        match (best_hint, my_play, my_trash, view.board.hints_remaining) {
-            (Some(hint), _, _, 1..) => TurnChoice::Hint(hint),
-            (_, Some(play), _, _) => TurnChoice::Play(play),
-            (_, _, Some(trash), _) => TurnChoice::Discard(trash),
-            (None, None, None, _) | (Some(_), None, None, 0) => TurnChoice::Discard(my_chop),
+        match (
+            best_hint,
+            my_play,
+            my_trash,
+            my_ptd,
+            view.board.hints_remaining,
+        ) {
+            (Some(hint), _, _, _, 1..) => TurnChoice::Hint(hint),
+            (_, Some(play), _, _, _) => TurnChoice::Play(play),
+            (_, _, Some(trash), _, _) => TurnChoice::Discard(trash),
+            (_, _, _, Some(ptd), _) => TurnChoice::Discard(ptd),
+            (_, None, None, None, _) => panic!("No safe action or ptd and not first turn"),
         }
     }
 
@@ -417,10 +460,12 @@ impl<'game> PlayerStrategy<'game> for RsPlayer<'game> {
             }
             (TurnChoice::Discard(index), TurnResult::Discard(card)) => {
                 let card_id = self.public.hands[self.public.board.player][index];
+                self.public.interpret_discard(card_id);
                 self.public.reveal_copy(*card, card_id);
             }
             (TurnChoice::Play(index), TurnResult::Play(card, _)) => {
                 let card_id = self.public.hands[self.public.board.player][index];
+                self.public.interpret_play(card_id);
                 self.public.reveal_copy(*card, card_id);
             }
             _ => panic!("mismatched turn choice and turn result"),

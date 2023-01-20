@@ -136,6 +136,9 @@ impl CheatingPlayerStrategy {
     }
 }
 impl PlayerStrategy for CheatingPlayerStrategy {
+    fn name(&self) -> String {
+        String::from("cheat")
+    }
     fn decide(&mut self, view: &BorrowedGameView) -> TurnChoice {
         self.inform_last_player_cards(view);
 

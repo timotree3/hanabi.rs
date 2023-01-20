@@ -5,9 +5,11 @@ extern crate crossbeam;
 extern crate float_ord;
 extern crate fnv;
 extern crate rand;
+extern crate serde_json;
 
 mod game;
 mod helpers;
+mod json_output;
 mod simulator;
 mod strategy;
 mod strategies {
@@ -61,6 +63,12 @@ fn main() {
         "OUTPUT_FREQ",
     );
     opts.optopt(
+        "j",
+        "json-output",
+        "Pattern for the JSON output file. '%s' will be replaced by the seed.",
+        "FILE_PATTERN",
+    );
+    opts.optopt(
         "t",
         "nthreads",
         "Number of threads to use for simulation (default 1)",
@@ -84,6 +92,11 @@ fn main() {
         "",
         "write-results-table",
         "Update the results table in README.md",
+    );
+    opts.optflag(
+        "",
+        "losses-only",
+        "When saving JSON outputs, save lost games only",
     );
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -136,6 +149,8 @@ fn main() {
     let n_players = u32::from_str(matches.opt_str("p").as_deref().unwrap_or("4")).unwrap();
     let g_opt = matches.opt_str("g");
     let strategy_str: &str = g_opt.as_deref().unwrap_or("cheat");
+    let json_output_pattern = matches.opt_str("j");
+    let json_losses_only = matches.opt_present("losses-only");
 
     sim_games(
         n_players,
@@ -144,6 +159,8 @@ fn main() {
         n_trials,
         n_threads,
         progress_info,
+        json_output_pattern,
+        json_losses_only,
     )
     .info();
 }
@@ -155,6 +172,8 @@ fn sim_games(
     n_trials: u32,
     n_threads: u32,
     progress_info: Option<u32>,
+    json_output_pattern: Option<String>,
+    json_losses_only: bool,
 ) -> simulator::SimResult {
     let hand_size = match n_players {
         2 => 5,
@@ -195,6 +214,8 @@ fn sim_games(
         n_trials,
         n_threads,
         progress_info,
+        json_output_pattern,
+        json_losses_only,
     )
 }
 
@@ -250,8 +271,16 @@ fn get_results_table() -> String {
                 &player_nums,
                 (format_name(strategy), space.clone()),
                 &|n_players| {
-                    let simresult =
-                        sim_games(n_players, strategy, Some(seed), n_trials, n_threads, None);
+                    let simresult = sim_games(
+                        n_players,
+                        strategy,
+                        Some(seed),
+                        n_trials,
+                        n_threads,
+                        None,
+                        None,
+                        false,
+                    );
                     (
                         format_score(simresult.average_score(), simresult.score_stderr()),
                         format_percent(

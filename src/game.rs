@@ -368,7 +368,9 @@ impl BoardState {
     }
 
     pub fn is_over(&self) -> bool {
-        (self.lives_remaining == 0) || (self.deckless_turns_remaining == 0)
+        (self.lives_remaining == 0)
+            || (self.deckless_turns_remaining == 0)
+            || (self.score() == PERFECT_SCORE)
     }
 }
 impl fmt::Display for BoardState {
@@ -522,12 +524,28 @@ impl GameView for OwnedGameView {
     }
 }
 
+// Internally, every card is annotated with its index in the deck in order to
+// generate easy-to-interpret JSON output. These annotations are stripped off
+// when passing GameViews to strategies.
+//
+// TODO: Maybe we should give strategies access to the annotations as well?
+// This could simplify code like in InformationPlayerStrategy::update_public_info_for_discard_or_play.
+// Also, this would let a strategy publish "notes" on cards more easily.
+pub type AnnotatedCard = (usize, Card);
+pub type AnnotatedCards = Vec<AnnotatedCard>;
+
+fn strip_annotations(cards: &AnnotatedCards) -> Cards {
+    cards.iter().map(|(_i, card)| card.clone()).collect()
+}
+
 // complete game state (known to nobody!)
 #[derive(Debug)]
 pub struct GameState {
-    pub hands: FnvHashMap<Player, Cards>,
+    pub hands: FnvHashMap<Player, AnnotatedCards>,
+    // used to construct BorrowedGameViews
+    pub unannotated_hands: FnvHashMap<Player, Cards>,
     pub board: BoardState,
-    pub deck: Cards,
+    pub deck: AnnotatedCards,
 }
 impl fmt::Display for GameState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -538,7 +556,7 @@ impl fmt::Display for GameState {
         for player in self.board.get_players() {
             let hand = &self.hands.get(&player).unwrap();
             write!(f, "player {player}:")?;
-            for card in hand.iter() {
+            for (_i, card) in hand.iter() {
                 write!(f, "    {card}")?;
             }
             f.write_str("\n")?;
@@ -552,7 +570,9 @@ impl fmt::Display for GameState {
 }
 
 impl GameState {
-    pub fn new(opts: &GameOptions, mut deck: Cards) -> GameState {
+    pub fn new(opts: &GameOptions, deck: Cards) -> GameState {
+        // We enumerate the cards in reverse order since they'll be drawn from the back of the deck.
+        let mut deck: AnnotatedCards = deck.into_iter().rev().enumerate().rev().collect();
         let mut board = BoardState::new(opts, deck.len() as u32);
 
         let hands = (0..opts.num_players)
@@ -567,8 +587,17 @@ impl GameState {
                 (player, hand)
             })
             .collect::<FnvHashMap<_, _>>();
+        let unannotated_hands = hands
+            .iter()
+            .map(|(player, hand)| (*player, strip_annotations(hand)))
+            .collect::<FnvHashMap<_, _>>();
 
-        GameState { hands, board, deck }
+        GameState {
+            hands,
+            unannotated_hands,
+            board,
+            deck,
+        }
     }
 
     pub fn get_players(&self) -> Range<Player> {
@@ -586,7 +615,7 @@ impl GameState {
     // get the game state view of a particular player
     pub fn get_view(&self, player: Player) -> BorrowedGameView {
         let mut other_hands = FnvHashMap::default();
-        for (&other_player, hand) in &self.hands {
+        for (&other_player, hand) in &self.unannotated_hands {
             if player != other_player {
                 other_hands.insert(other_player, hand);
             }
@@ -599,10 +628,18 @@ impl GameState {
         }
     }
 
+    fn update_player_hand(&mut self) {
+        let player = self.board.player;
+        self.unannotated_hands
+            .insert(player, strip_annotations(self.hands.get(&player).unwrap()));
+    }
+
     // takes a card from the player's hand, and replaces it if possible
     fn take_from_hand(&mut self, index: usize) -> Card {
         let hand = &mut self.hands.get_mut(&self.board.player).unwrap();
-        hand.remove(index)
+        let card = hand.remove(index).1;
+        self.update_player_hand();
+        card
     }
 
     fn replenish_hand(&mut self) {
@@ -610,10 +647,11 @@ impl GameState {
         if (hand.len() as u32) < self.board.hand_size {
             if let Some(new_card) = self.deck.pop() {
                 self.board.deck_size -= 1;
-                debug!("Drew new card, {}", new_card);
+                debug!("Drew new card, {}", new_card.1);
                 hand.push(new_card);
             }
         }
+        self.update_player_hand();
     }
 
     pub fn process_choice(&mut self, choice: TurnChoice) -> TurnRecord {
@@ -637,11 +675,11 @@ impl GameState {
                     let results = match hint.hinted {
                         Hinted::Color(color) => hand
                             .iter()
-                            .map(|card| card.color == color)
+                            .map(|(_i, card)| card.color == color)
                             .collect::<Vec<_>>(),
                         Hinted::Value(value) => hand
                             .iter()
-                            .map(|card| card.value == value)
+                            .map(|(_i, card)| card.value == value)
                             .collect::<Vec<_>>(),
                     };
                     if !self.board.allow_empty_hints {

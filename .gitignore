@@ -1,2 +1,5 @@
 target
 *.sw*
+
+# Developers may wish to generate JSON replays of bot games and store them in /replays/
+/replays/

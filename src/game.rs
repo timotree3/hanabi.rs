@@ -188,7 +188,7 @@ pub enum Hinted {
 }
 impl fmt::Display for Hinted {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
+        match *self {
             Hinted::Color(color) => {
                 write!(f, "{}", color)
             }
@@ -355,16 +355,10 @@ impl BoardState {
     // can be discarded without necessarily sacrificing score, based on discard + fireworks
     pub fn is_dispensable(&self, card: &Card) -> bool {
         let firework = self.fireworks.get(&card.color).unwrap();
-        if firework.complete() {
-            true
-        } else {
-            let needed = firework.needed_value().unwrap();
-            if card.value < needed || card.value > self.highest_attainable(card.color) {
-                true
-            } else {
-                self.discard.remaining(card) != 1
-            }
-        }
+        firework.complete()
+            || card.value < firework.needed_value().unwrap()
+            || card.value > self.highest_attainable(card.color)
+            || self.discard.remaining(card) != 1
     }
 
     pub fn get_players(&self) -> Range<Player> {
@@ -372,10 +366,7 @@ impl BoardState {
     }
 
     pub fn score(&self) -> Score {
-        self.fireworks
-            .iter()
-            .map(|(_, firework)| firework.score())
-            .sum()
+        self.fireworks.values().map(Firework::score).sum()
     }
 
     pub fn discard_size(&self) -> u32 {
@@ -449,8 +440,7 @@ pub trait GameView {
     fn has_card(&self, player: &Player, card: &Card) -> bool {
         self.get_hand(player)
             .iter()
-            .position(|other_card| card == other_card)
-            .is_some()
+            .any(|other_card| card == other_card)
     }
 
     fn get_other_players(&self) -> Vec<Player> {
@@ -624,12 +614,12 @@ impl GameState {
 
     // takes a card from the player's hand, and replaces it if possible
     fn take_from_hand(&mut self, index: usize) -> Card {
-        let ref mut hand = self.hands.get_mut(&self.board.player).unwrap();
+        let hand = &mut self.hands.get_mut(&self.board.player).unwrap();
         hand.remove(index)
     }
 
     fn replenish_hand(&mut self) {
-        let ref mut hand = self.hands.get_mut(&self.board.player).unwrap();
+        let hand = &mut self.hands.get_mut(&self.board.player).unwrap();
         if (hand.len() as u32) < self.board.hand_size {
             if let Some(new_card) = self.deck.pop() {
                 self.board.deck_size -= 1;
@@ -650,8 +640,8 @@ impl GameState {
                     self.board.hints_remaining -= 1;
                     debug!("Hint to player {}, about {}", hint.player, hint.hinted);
 
-                    assert!(
-                        self.board.player != hint.player,
+                    assert_ne!(
+                        self.board.player, hint.player,
                         "Player {} gave a hint to himself",
                         hint.player
                     );

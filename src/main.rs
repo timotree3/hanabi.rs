@@ -105,7 +105,8 @@ fn main() {
         return print!("{}", get_results_table());
     }
 
-    let log_level_str: &str = &matches.opt_str("l").unwrap_or("info".to_string());
+    let l_opt = matches.opt_str("l");
+    let log_level_str = l_opt.as_deref().unwrap_or("info");
     let log_level = match log_level_str {
         "trace" => log::LogLevelFilter::Trace,
         "debug" => log::LogLevelFilter::Debug,
@@ -124,16 +125,17 @@ fn main() {
     })
     .unwrap();
 
-    let n_trials = u32::from_str(&matches.opt_str("n").unwrap_or("1".to_string())).unwrap();
+    let n_trials = u32::from_str(matches.opt_str("n").as_deref().unwrap_or("1")).unwrap();
     let seed = matches
         .opt_str("s")
         .map(|seed_str| u32::from_str(&seed_str).unwrap());
     let progress_info = matches
         .opt_str("o")
         .map(|freq_str| u32::from_str(&freq_str).unwrap());
-    let n_threads = u32::from_str(&matches.opt_str("t").unwrap_or("1".to_string())).unwrap();
-    let n_players = u32::from_str(&matches.opt_str("p").unwrap_or("4".to_string())).unwrap();
-    let strategy_str: &str = &matches.opt_str("g").unwrap_or("cheat".to_string());
+    let n_threads = u32::from_str(matches.opt_str("t").as_deref().unwrap_or("1")).unwrap();
+    let n_players = u32::from_str(matches.opt_str("p").as_deref().unwrap_or("4")).unwrap();
+    let g_opt = matches.opt_str("g");
+    let strategy_str: &str = g_opt.as_deref().unwrap_or("cheat");
 
     sim_games(
         n_players,

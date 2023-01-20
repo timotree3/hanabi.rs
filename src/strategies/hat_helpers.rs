@@ -253,7 +253,7 @@ pub trait PublicInformation: Clone {
     fn get_private_info(&self, view: &OwnedGameView) -> HandInfo<CardPossibilityTable> {
         let mut info = self.get_player_info(&view.player);
         for card_table in info.iter_mut() {
-            for (_, hand) in &view.other_hands {
+            for hand in view.other_hands.values() {
                 for card in hand {
                     card_table.decrement_weight_if_possible(card);
                 }

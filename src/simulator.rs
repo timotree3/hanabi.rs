@@ -85,7 +85,7 @@ impl Histogram {
     fn insert_many(&mut self, val: Score, count: u32) {
         let new_count = self.get_count(&val) + count;
         self.hist.insert(val, new_count);
-        self.sum += val * (count as u32);
+        self.sum += val * count;
         self.total_count += count;
     }
     pub fn insert(&mut self, val: Score) {
@@ -195,11 +195,11 @@ where
             lives_histogram.merge(thread_lives_histogram);
         }
 
-        non_perfect_seeds.sort();
+        non_perfect_seeds.sort_unstable();
         SimResult {
             scores: score_histogram,
             lives: lives_histogram,
-            non_perfect_seed: non_perfect_seeds.get(0).cloned(),
+            non_perfect_seed: non_perfect_seeds.first().cloned(),
         }
     })
 }

@@ -33,7 +33,7 @@ pub trait CardInfo {
     // get probability weight for the card
     #[allow(unused_variables)]
     fn get_weight(&self, card: &Card) -> f32 {
-        1.
+        1.0
     }
 
     fn get_weighted_possibilities(&self) -> Vec<(Card, f32)> {
@@ -135,7 +135,7 @@ pub trait CardInfo {
 // Represents hinted information about possible values of type T
 pub trait Info<T>
 where
-    T: Hash + Eq + Clone,
+    T: Hash + Eq + Clone + Copy,
 {
     // get all a-priori possibilities
     fn get_all_possibilities() -> Vec<T>;
@@ -149,7 +149,7 @@ where
     fn get_possibilities(&self) -> Vec<T> {
         self.get_possibility_set()
             .iter()
-            .cloned()
+            .copied()
             .collect::<Vec<T>>()
     }
 
@@ -160,7 +160,7 @@ where
     fn initialize() -> HashSet<T> {
         Self::get_all_possibilities()
             .iter()
-            .cloned()
+            .copied()
             .collect::<HashSet<_>>()
     }
 
@@ -301,10 +301,10 @@ impl CardPossibilityTable {
 
     pub fn decrement_weight(&mut self, card: &Card) {
         let remove = {
-            let weight = self.possible.get_mut(card).expect(&format!(
-                "Decrementing weight for impossible card: {}",
-                card
-            ));
+            let weight = self
+                .possible
+                .get_mut(card)
+                .unwrap_or_else(|| panic!("Decrementing weight for impossible card: {}", card));
             *weight -= 1;
             *weight == 0
         };
@@ -425,15 +425,15 @@ where
 
     // update for hint to me
     pub fn update_for_hint(&mut self, hinted: &Hinted, matches: &[bool]) {
-        match hinted {
+        match *hinted {
             Hinted::Color(color) => {
                 for (card_info, &matched) in self.hand_info.iter_mut().zip(matches.iter()) {
-                    card_info.mark_color(*color, matched);
+                    card_info.mark_color(color, matched);
                 }
             }
             Hinted::Value(value) => {
                 for (card_info, &matched) in self.hand_info.iter_mut().zip(matches.iter()) {
-                    card_info.mark_value(*value, matched);
+                    card_info.mark_value(value, matched);
                 }
             }
         }

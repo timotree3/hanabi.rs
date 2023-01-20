@@ -20,7 +20,7 @@ pub fn get_count_for_value(value: Value) -> u32 {
         2 | 3 | 4 => 2,
         5 => 1,
         _ => {
-            panic!("Unexpected value: {}", value);
+            panic!("Unexpected value: {value}");
         }
     }
 }
@@ -78,11 +78,11 @@ impl CardCounts {
 impl fmt::Display for CardCounts {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for &color in COLORS.iter() {
-            write!(f, "{}: ", color)?;
+            write!(f, "{color}: ")?;
             for &value in VALUES.iter() {
                 let count = self.get_count(&Card::new(color, value));
                 let total = get_count_for_value(value);
-                write!(f, "{}/{} {}s", count, total, value)?;
+                write!(f, "{count}/{total} {value}s")?;
                 if value != FINAL_VALUE {
                     f.write_str(", ")?;
                 }
@@ -188,10 +188,10 @@ impl fmt::Display for Hinted {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Hinted::Color(color) => {
-                write!(f, "{}", color)
+                write!(f, "{color}")
             }
             Hinted::Value(value) => {
-                write!(f, "{}", value)
+                write!(f, "{value}")
             }
         }
     }
@@ -537,9 +537,9 @@ impl fmt::Display for GameState {
         f.write_str("======\n")?;
         for player in self.board.get_players() {
             let hand = &self.hands.get(&player).unwrap();
-            write!(f, "player {}:", player)?;
+            write!(f, "player {player}:")?;
             for card in hand.iter() {
-                write!(f, "    {}", card)?;
+                write!(f, "    {card}")?;
             }
             f.write_str("\n")?;
         }

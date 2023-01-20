@@ -34,7 +34,7 @@ impl log::Log for SimpleLogger {
 }
 
 fn print_usage(program: &str, opts: Options) {
-    print!("{}", opts.usage(&format!("Usage: {} [options]", program)));
+    print!("{}", opts.usage(&format!("Usage: {program} [options]")));
 }
 
 fn main() {
@@ -115,7 +115,7 @@ fn main() {
         "error" => log::LogLevelFilter::Error,
         _ => {
             print_usage(&program, opts);
-            panic!("Unexpected log level argument {}", log_level_str);
+            panic!("Unexpected log level argument {log_level_str}");
         }
     };
 
@@ -162,7 +162,7 @@ fn sim_games(
         4 => 4,
         5 => 4,
         _ => {
-            panic!("There should be 2 to 5 players, not {}", n_players);
+            panic!("There should be 2 to 5 players, not {n_players}");
         }
     };
 
@@ -185,7 +185,7 @@ fn sim_games(
         "info" => Box::new(strategies::information::InformationStrategyConfig::new())
             as Box<dyn strategy::GameStrategyConfig + Sync>,
         _ => {
-            panic!("Unexpected strategy argument {}", strategy_str);
+            panic!("Unexpected strategy argument {strategy_str}");
         }
     };
     simulator::simulate(
@@ -206,13 +206,12 @@ fn get_results_table() -> String {
     let n_threads = 8;
 
     let intro = format!(
-        "On the first {} seeds, we have these scores and win rates (average ± standard error):\n\n",
-        n_trials
+        "On the first {n_trials} seeds, we have these scores and win rates (average ± standard error):\n\n"
     );
-    let format_name = |x| format!(" {:7} ", x);
-    let format_players = |x| format!("   {}p    ", x);
-    let format_percent = |x, stderr| format!(" {:05.2} ± {:.2} % ", x, stderr);
-    let format_score = |x, stderr| format!(" {:07.4} ± {:.4} ", x, stderr);
+    let format_name = |x| format!(" {x:7} ");
+    let format_players = |x| format!("   {x}p    ");
+    let format_percent = |x, stderr| format!(" {x:05.2} ± {stderr:.2} % ");
+    let format_score = |x, stderr| format!(" {x:07.4} ± {stderr:.4} ");
     let space = String::from("         ");
     let dashes = String::from("---------");
     let dashes_long = String::from("------------------");
@@ -288,7 +287,7 @@ time cargo run --release -- --write-results-table
     let readme_init = {
         let parts = readme_contents.splitn(2, separator).collect::<Vec<_>>();
         if parts.len() != 2 {
-            panic!("{} has been modified in the Results section!", readme);
+            panic!("{readme} has been modified in the Results section!");
         }
         parts[0]
     };

@@ -268,7 +268,7 @@ impl fmt::Display for SimpleCardInfo {
         //}
         for &value in &VALUES {
             if self.value_info.is_possible(value) {
-                write!(string, "{}", value).unwrap();
+                write!(string, "{value}").unwrap();
             }
         }
         f.pad(&string)
@@ -304,7 +304,7 @@ impl CardPossibilityTable {
             let weight = self
                 .possible
                 .get_mut(card)
-                .unwrap_or_else(|| panic!("Decrementing weight for impossible card: {}", card));
+                .unwrap_or_else(|| panic!("Decrementing weight for impossible card: {card}"));
             *weight -= 1;
             *weight == 0
         };
@@ -401,7 +401,7 @@ impl CardInfo for CardPossibilityTable {
 impl fmt::Display for CardPossibilityTable {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for (card, weight) in &self.possible {
-            write!(f, "{} {}, ", weight, card)?;
+            write!(f, "{weight} {card}, ")?;
         }
         Ok(())
     }

@@ -163,7 +163,7 @@ impl PlayerStrategy for CheatingPlayerStrategy {
             return TurnChoice::Play(index);
         }
 
-        // cannot discard while at max clue count
+        // cannot discard while at max hint count
         if view.board.hints_remaining == view.board.hints_total {
             return self.throwaway_hint(view);
         }

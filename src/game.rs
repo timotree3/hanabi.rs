@@ -656,7 +656,7 @@ impl GameState {
                 TurnChoice::Discard(index) => {
                     assert!(
                         self.board.hints_remaining < self.board.hints_total,
-                        "Tried to discard while at max clue count"
+                        "Tried to discard while at max hint count"
                     );
 
                     let card = self.take_from_hand(index);

@@ -41,29 +41,27 @@ pub struct RandomStrategyPlayer {
 impl PlayerStrategy for RandomStrategyPlayer {
     fn decide(&mut self, view: &BorrowedGameView) -> TurnChoice {
         let p = rand::random::<f64>();
-        if p < self.hint_probability {
-            if view.board.hints_remaining > 0 {
-                let hint_player = view.board.player_to_left(&self.me);
-                let hint_card = rand::thread_rng()
-                    .choose(view.get_hand(&hint_player))
-                    .unwrap();
-                let hinted = {
-                    if rand::random() {
-                        // hint a color
-                        Hinted::Color(hint_card.color)
-                    } else {
-                        Hinted::Value(hint_card.value)
-                    }
-                };
-                TurnChoice::Hint(Hint {
-                    player: hint_player,
-                    hinted,
-                })
-            } else {
-                TurnChoice::Discard(0)
-            }
-        } else if p < self.hint_probability + self.play_probability {
+        if p < self.play_probability {
             TurnChoice::Play(0)
+        } else if view.board.hints_remaining == view.board.hints_total
+            || (view.board.hints_remaining > 0 && p < self.play_probability + self.hint_probability)
+        {
+            let hint_player = view.board.player_to_left(&self.me);
+            let hint_card = rand::thread_rng()
+                .choose(view.get_hand(&hint_player))
+                .unwrap();
+            let hinted = {
+                if rand::random() {
+                    // hint a color
+                    Hinted::Color(hint_card.color)
+                } else {
+                    Hinted::Value(hint_card.value)
+                }
+            };
+            TurnChoice::Hint(Hint {
+                player: hint_player,
+                hinted,
+            })
         } else {
             TurnChoice::Discard(0)
         }

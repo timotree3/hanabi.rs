@@ -163,6 +163,11 @@ impl PlayerStrategy for CheatingPlayerStrategy {
             return TurnChoice::Play(index);
         }
 
+        // cannot discard while at max clue count
+        if view.board.hints_remaining == view.board.hints_total {
+            return self.throwaway_hint(view);
+        }
+
         // discard threshold is how many cards we're willing to discard
         // such that if we only played,
         // we would not reach the final countdown round

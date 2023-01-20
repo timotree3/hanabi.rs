@@ -889,9 +889,9 @@ impl InformationPlayerStrategy {
             self.find_useless_cards(&view.board, &public_info.get_player_info(me));
         let useless_indices = self.find_useless_cards(&view.board, &private_info);
 
-        // NOTE When changing this, make sure to keep the "discard" branch of update() up to date!
-        let will_hint = if view.board.hints_remaining > 0
-            && public_info.someone_else_needs_hint(view)
+        // NOTE When changing this, make sure to keep the "discard" branch of update_wrapped() up to date!
+        let will_hint = if view.board.hints_remaining == view.board.hints_total
+            || (view.board.hints_remaining > 0 && public_info.someone_else_needs_hint(view))
         {
             true
         } else if view.board.discard_size() <= discard_threshold && !useless_indices.is_empty() {

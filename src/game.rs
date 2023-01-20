@@ -654,6 +654,11 @@ impl GameState {
                     TurnResult::Hint(results)
                 }
                 TurnChoice::Discard(index) => {
+                    assert!(
+                        self.board.hints_remaining < self.board.hints_total,
+                        "Tried to discard while at max clue count"
+                    );
+
                     let card = self.take_from_hand(index);
                     debug!("Discard card in position {}, which is {}", index, card);
                     self.board.discard.place(card.clone());

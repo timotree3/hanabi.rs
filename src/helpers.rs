@@ -6,7 +6,7 @@ use std::hash::Hash;
 use std::ops::{Index, IndexMut};
 use std::slice;
 
-use game::*;
+use crate::game::*;
 
 // trait representing information about a card
 pub trait CardInfo {

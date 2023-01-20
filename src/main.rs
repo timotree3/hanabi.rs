@@ -236,7 +236,7 @@ fn get_results_table() -> String {
     }
     fn concat_twolines(body: Vec<TwoLines>) -> String {
         body.into_iter().fold(String::default(), |output, (a, b)| {
-            (output + &a + "\n" + &b + "\n")
+            output + &a + "\n" + &b + "\n"
         })
     }
     let header = make_twolines(&player_nums, (space.clone(), dashes), &|n_players| {

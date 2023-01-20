@@ -2,10 +2,10 @@ use float_ord::*;
 use fnv::{FnvHashMap, FnvHashSet};
 use std::cmp::Ordering;
 
-use game::*;
-use helpers::*;
-use strategies::hat_helpers::*;
-use strategy::*;
+use crate::game::*;
+use crate::helpers::*;
+use crate::strategies::hat_helpers::*;
+use crate::strategy::*;
 
 // TODO: use random extra information - i.e. when casting up and down,
 // we sometimes have 2 choices of value to choose

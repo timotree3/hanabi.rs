@@ -1,5 +1,5 @@
-use game::*;
-use helpers::*;
+use crate::game::*;
+use crate::helpers::*;
 
 #[derive(Debug, Clone)]
 pub struct ModulusInformation {

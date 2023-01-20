@@ -1,10 +1,9 @@
-use crossbeam;
 use fnv::FnvHashMap;
 use rand::{self, Rng, SeedableRng};
 use std::fmt;
 
-use game::*;
-use strategy::*;
+use crate::game::*;
+use crate::strategy::*;
 
 fn new_deck(seed: u32) -> Cards {
     let mut deck: Cards = Cards::new();

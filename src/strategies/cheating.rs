@@ -62,7 +62,7 @@ pub struct CheatingPlayerStrategy {
 impl CheatingPlayerStrategy {
     // last player might've drawn a new card, let him know!
     fn inform_last_player_cards(&self, view: &BorrowedGameView) {
-        let next = view.board.player_to_right(&self.me);
+        let next = view.board.player_to_right(self.me);
         let their_hand = *view.other_hands.get(&next).unwrap();
         self.player_hands_cheat
             .borrow_mut()
@@ -71,8 +71,8 @@ impl CheatingPlayerStrategy {
 
     // give a throwaway hint - we only do this when we have nothing to do
     fn throwaway_hint(&self, view: &BorrowedGameView) -> TurnChoice {
-        let hint_player = view.board.player_to_left(&self.me);
-        let hint_card = &view.get_hand(&hint_player).first().unwrap();
+        let hint_player = view.board.player_to_left(self.me);
+        let hint_card = &view.get_hand(hint_player).first().unwrap();
         TurnChoice::Hint(Hint {
             player: hint_player,
             hinted: Hinted::Value(hint_card.value),
@@ -106,7 +106,7 @@ impl CheatingPlayerStrategy {
         let my_hand_value = self.hand_play_value(view, my_hand);
 
         for player in view.board.get_players() {
-            if player != self.me && view.has_card(&player, card) {
+            if player != self.me && view.has_card(player, card) {
                 let their_hand_value = self.hand_play_value(view, hands.get(&player).unwrap());
                 // they can play this card, and have less urgent plays than i do
                 if their_hand_value < my_hand_value {

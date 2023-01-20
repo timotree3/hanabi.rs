@@ -6,6 +6,10 @@ use std::hash::Hash;
 use std::ops::{Index, IndexMut};
 use std::slice;
 
+mod per_player;
+
+pub use per_player::PerPlayer;
+
 use crate::game::*;
 
 // trait representing information about a card

@@ -102,8 +102,8 @@ pub trait Question {
 }
 
 pub trait PublicInformation: Clone {
-    fn get_player_info(&self, player: &Player) -> HandInfo<CardPossibilityTable>;
-    fn set_player_info(&mut self, player: &Player, hand_info: HandInfo<CardPossibilityTable>);
+    fn get_player_info(&self, player: Player) -> HandInfo<CardPossibilityTable>;
+    fn set_player_info(&mut self, player: Player, hand_info: HandInfo<CardPossibilityTable>);
 
     fn new(board: &BoardState) -> Self;
     fn set_board(&mut self, board: &BoardState);
@@ -124,14 +124,14 @@ pub trait PublicInformation: Clone {
     /// before the entire "hat value" calculation.
     fn ask_question(
         &self,
-        player: &Player,
-        hand_info: &HandInfo<CardPossibilityTable>,
+        player: Player,
+        board: &HandInfo<CardPossibilityTable>,
         total_info: u32,
     ) -> Option<Box<dyn Question>>;
 
     fn ask_question_wrapper(
         &self,
-        player: &Player,
+        player: Player,
         hand_info: &HandInfo<CardPossibilityTable>,
         total_info: u32,
     ) -> Option<Box<dyn Question>> {
@@ -158,19 +158,19 @@ pub trait PublicInformation: Clone {
 
     fn set_player_infos(&mut self, infos: Vec<(Player, HandInfo<CardPossibilityTable>)>) {
         for (player, new_hand_info) in infos {
-            self.set_player_info(&player, new_hand_info);
+            self.set_player_info(player, new_hand_info);
         }
         self.update_other_info();
     }
 
     fn get_hat_info_for_player(
         &self,
-        player: &Player,
+        player: Player,
         hand_info: &mut HandInfo<CardPossibilityTable>,
         total_info: u32,
         view: &OwnedGameView,
     ) -> ModulusInformation {
-        assert!(player != &view.player);
+        assert!(player != view.player);
         let mut answer_info = ModulusInformation::none();
         while let Some(question) =
             self.ask_question_wrapper(player, hand_info, answer_info.info_remaining(total_info))
@@ -185,7 +185,7 @@ pub trait PublicInformation: Clone {
 
     fn update_from_hat_info_for_player(
         &self,
-        player: &Player,
+        player: Player,
         hand_info: &mut HandInfo<CardPossibilityTable>,
         board: &BoardState,
         mut info: ModulusInformation,
@@ -204,10 +204,10 @@ pub trait PublicInformation: Clone {
         let (infos, new_player_hands): (Vec<_>, Vec<_>) = view
             .get_other_players()
             .iter()
-            .map(|player| {
+            .map(|&player| {
                 let mut hand_info = self.get_player_info(player);
                 let info = self.get_hat_info_for_player(player, &mut hand_info, total_info, view);
-                (info, (*player, hand_info))
+                (info, (player, hand_info))
             })
             .unzip();
         self.set_player_infos(new_player_hands);
@@ -230,9 +230,9 @@ pub trait PublicInformation: Clone {
             .into_iter()
             .filter(|player| *player != info_source)
             .map(|player| {
-                let mut hand_info = self.get_player_info(&player);
+                let mut hand_info = self.get_player_info(player);
                 let player_info =
-                    self.get_hat_info_for_player(&player, &mut hand_info, info.modulus, view);
+                    self.get_hat_info_for_player(player, &mut hand_info, info.modulus, view);
                 (player_info, (player, hand_info))
             })
             .unzip();
@@ -243,15 +243,15 @@ pub trait PublicInformation: Clone {
         if me == info_source {
             assert!(info.value == 0);
         } else {
-            let mut my_hand = self.get_player_info(&me);
-            self.update_from_hat_info_for_player(&me, &mut my_hand, &view.board, info);
+            let mut my_hand = self.get_player_info(me);
+            self.update_from_hat_info_for_player(me, &mut my_hand, &view.board, info);
             new_player_hands.push((me, my_hand));
         }
         self.set_player_infos(new_player_hands);
     }
 
     fn get_private_info(&self, view: &OwnedGameView) -> HandInfo<CardPossibilityTable> {
-        let mut info = self.get_player_info(&view.player);
+        let mut info = self.get_player_info(view.player);
         for card_table in info.iter_mut() {
             for hand in view.other_hands.values() {
                 for card in hand {

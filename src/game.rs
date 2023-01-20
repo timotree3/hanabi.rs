@@ -3,6 +3,8 @@ use std::fmt;
 use std::ops::Range;
 use tracing::debug;
 
+use crate::helpers::PerPlayer;
+
 pub type Player = u32;
 
 pub type Color = char;
@@ -362,10 +364,10 @@ impl BoardState {
         self.discard.cards.len() as u32
     }
 
-    pub fn player_to_left(&self, player: &Player) -> Player {
+    pub fn player_to_left(&self, player: Player) -> Player {
         (player + 1) % self.num_players
     }
-    pub fn player_to_right(&self, player: &Player) -> Player {
+    pub fn player_to_right(&self, player: Player) -> Player {
         (player + self.num_players - 1) % self.num_players
     }
 
@@ -415,20 +417,20 @@ impl fmt::Display for BoardState {
 // complete game view of a given player
 pub trait GameView {
     fn me(&self) -> Player;
-    fn get_hand(&self, player: &Player) -> &Cards;
+    fn get_hand(&self, player: Player) -> &Cards;
     fn get_board(&self) -> &BoardState;
 
     fn my_hand_size(&self) -> usize;
 
-    fn hand_size(&self, player: &Player) -> usize {
-        if self.me() == *player {
+    fn hand_size(&self, player: Player) -> usize {
+        if self.me() == player {
             self.my_hand_size()
         } else {
             self.get_hand(player).len()
         }
     }
 
-    fn has_card(&self, player: &Player, card: &Card) -> bool {
+    fn has_card(&self, player: Player, card: &Card) -> bool {
         self.get_hand(player)
             .iter()
             .any(|other_card| card == other_card)
@@ -444,11 +446,11 @@ pub trait GameView {
     fn can_see(&self, card: &Card) -> bool {
         self.get_other_players()
             .iter()
-            .any(|player| self.has_card(player, card))
+            .any(|&player| self.has_card(player, card))
     }
 
     fn someone_else_can_play(&self) -> bool {
-        self.get_other_players().iter().any(|player| {
+        self.get_other_players().iter().any(|&player| {
             self.get_hand(player)
                 .iter()
                 .any(|card| self.get_board().is_playable(card))
@@ -474,9 +476,9 @@ impl<'a> GameView for BorrowedGameView<'a> {
     fn my_hand_size(&self) -> usize {
         self.hand_size
     }
-    fn get_hand(&self, player: &Player) -> &Cards {
-        assert!(self.me() != *player, "Cannot query about your own state!");
-        self.other_hands.get(player).unwrap()
+    fn get_hand(&self, player: Player) -> &Cards {
+        assert!(self.me() != player, "Cannot query about your own state!");
+        self.other_hands.get(&player).unwrap()
     }
     fn get_board(&self) -> &BoardState {
         self.board
@@ -517,9 +519,9 @@ impl GameView for OwnedGameView {
     fn my_hand_size(&self) -> usize {
         self.hand_size
     }
-    fn get_hand(&self, player: &Player) -> &Cards {
-        assert!(self.me() != *player, "Cannot query about your own state!");
-        self.other_hands.get(player).unwrap()
+    fn get_hand(&self, player: Player) -> &Cards {
+        assert!(self.me() != player, "Cannot query about your own state!");
+        self.other_hands.get(&player).unwrap()
     }
     fn get_board(&self) -> &BoardState {
         &self.board
@@ -543,9 +545,9 @@ fn strip_annotations(cards: &AnnotatedCards) -> Cards {
 // complete game state (known to nobody!)
 #[derive(Debug)]
 pub struct GameState {
-    pub hands: FnvHashMap<Player, AnnotatedCards>,
+    pub hands: PerPlayer<AnnotatedCards>,
     // used to construct BorrowedGameViews
-    pub unannotated_hands: FnvHashMap<Player, Cards>,
+    pub unannotated_hands: PerPlayer<Cards>,
     pub board: BoardState,
     pub deck: AnnotatedCards,
 }
@@ -556,10 +558,10 @@ impl fmt::Display for GameState {
         f.write_str("Hands:\n")?;
         f.write_str("======\n")?;
         for player in self.board.get_players() {
-            let hand = &self.hands.get(&player).unwrap();
-            write!(f, "player {player}:")?;
+            let hand = &self.hands[player];
+            write!(f, "player {}:", player)?;
             for (_i, card) in hand.iter() {
-                write!(f, "    {card}")?;
+                write!(f, "    {}", card)?;
             }
             f.write_str("\n")?;
         }
@@ -577,22 +579,18 @@ impl GameState {
         let mut deck: AnnotatedCards = deck.into_iter().rev().enumerate().rev().collect();
         let mut board = BoardState::new(opts, deck.len() as u32);
 
-        let hands = (0..opts.num_players)
-            .map(|player| {
-                let hand = (0..opts.hand_size)
-                    .map(|_| {
-                        // we can assume the deck is big enough to draw initial hands
-                        board.deck_size -= 1;
-                        deck.pop().unwrap()
-                    })
-                    .collect::<Vec<_>>();
-                (player, hand)
-            })
-            .collect::<FnvHashMap<_, _>>();
-        let unannotated_hands = hands
-            .iter()
-            .map(|(player, hand)| (*player, strip_annotations(hand)))
-            .collect::<FnvHashMap<_, _>>();
+        let hands = PerPlayer::new(opts.num_players, |_| {
+            (0..opts.hand_size)
+                .map(|_| {
+                    // we can assume the deck is big enough to draw initial hands
+                    board.deck_size -= 1;
+                    deck.pop().unwrap()
+                })
+                .collect::<Vec<_>>()
+        });
+
+        let unannotated_hands =
+            PerPlayer::new(opts.num_players, |player| strip_annotations(&hands[player]));
 
         GameState {
             hands,
@@ -617,14 +615,14 @@ impl GameState {
     // get the game state view of a particular player
     pub fn get_view(&self, player: Player) -> BorrowedGameView {
         let mut other_hands = FnvHashMap::default();
-        for (&other_player, hand) in &self.unannotated_hands {
+        for (other_player, hand) in self.unannotated_hands.iter() {
             if player != other_player {
                 other_hands.insert(other_player, hand);
             }
         }
         BorrowedGameView {
             player,
-            hand_size: self.hands.get(&player).unwrap().len(),
+            hand_size: self.hands[player].len(),
             other_hands,
             board: &self.board,
         }
@@ -632,20 +630,20 @@ impl GameState {
 
     fn update_player_hand(&mut self) {
         let player = self.board.player;
-        self.unannotated_hands
-            .insert(player, strip_annotations(self.hands.get(&player).unwrap()));
+        self.unannotated_hands[player] = strip_annotations(&self.hands[player]);
     }
 
     // takes a card from the player's hand, and replaces it if possible
     fn take_from_hand(&mut self, index: usize) -> Card {
-        let hand = &mut self.hands.get_mut(&self.board.player).unwrap();
-        let card = hand.remove(index).1;
+        // FIXME this code looks like it's awfully contorted in order to please the borrow checker.
+        // Can we have this look nicer?
+        let card = self.hands[self.board.player].remove(index).1;
         self.update_player_hand();
         card
     }
 
     fn replenish_hand(&mut self) {
-        let hand = &mut self.hands.get_mut(&self.board.player).unwrap();
+        let hand = &mut self.hands[self.board.player];
         if (hand.len() as u32) < self.board.hand_size {
             if let Some(new_card) = self.deck.pop() {
                 self.board.deck_size -= 1;
@@ -653,6 +651,7 @@ impl GameState {
                 hand.push(new_card);
             }
         }
+
         self.update_player_hand();
     }
 
@@ -673,7 +672,7 @@ impl GameState {
                         hint.player
                     );
 
-                    let hand = self.hands.get(&hint.player).unwrap();
+                    let hand = &self.hands[hint.player];
                     let results = match hint.hinted {
                         Hinted::Color(color) => hand
                             .iter()
@@ -748,7 +747,7 @@ impl GameState {
         self.board.turn += 1;
         self.board.player = {
             let cur = self.board.player;
-            self.board.player_to_left(&cur)
+            self.board.player_to_left(cur)
         };
         assert_eq!(
             (self.board.turn - 1) % self.board.num_players,

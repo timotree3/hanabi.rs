@@ -7,6 +7,7 @@ use std::fmt;
 use tracing::{debug, info};
 
 use crate::game::*;
+use crate::helpers::PerPlayer;
 use crate::json_output::*;
 use crate::strategy::*;
 
@@ -36,15 +37,9 @@ pub fn simulate_once(
 
     let mut game = GameState::new(opts, deck.clone());
 
-    let mut strategies = game
-        .get_players()
-        .map(|player| {
-            (
-                player,
-                game_strategy.initialize(player, &game.get_view(player)),
-            )
-        })
-        .collect::<FnvHashMap<Player, Box<dyn PlayerStrategy>>>();
+    let mut strategies = PerPlayer::new(opts.num_players, |player| {
+        game_strategy.initialize(player, &game.get_view(player))
+    });
 
     let mut actions = Vec::new();
 
@@ -57,19 +52,16 @@ pub fn simulate_once(
         debug!("=======================================================");
         debug!("{}", game);
 
-        let choice = {
-            let strategy = strategies.get_mut(&player).unwrap();
-            strategy.decide(&game.get_view(player))
-        };
+        let choice = strategies[player].decide(&game.get_view(player));
         if output_json {
             actions.push(match choice {
                 TurnChoice::Hint(ref hint) => action_clue(hint),
                 TurnChoice::Play(index) => {
-                    let card = &game.hands[&player][index];
+                    let card = &game.hands[player][index];
                     action_play(card)
                 }
                 TurnChoice::Discard(index) => {
-                    let card = &game.hands[&player][index];
+                    let card = &game.hands[player][index];
                     action_discard(card)
                 }
             });
@@ -78,8 +70,7 @@ pub fn simulate_once(
         let turn = game.process_choice(choice);
 
         for player in game.get_players() {
-            let strategy = strategies.get_mut(&player).unwrap();
-            strategy.update(&turn, &game.get_view(player));
+            strategies[player].update(&turn, &game.get_view(player));
         }
     }
     debug!("");
@@ -89,7 +80,7 @@ pub fn simulate_once(
     let json_output = if output_json {
         let player_names = game
             .get_players()
-            .map(|player| strategies[&player].name())
+            .map(|player| strategies[player].name())
             .collect();
         Some(json_format(&deck, &actions, &player_names))
     } else {

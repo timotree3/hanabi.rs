@@ -53,9 +53,9 @@ impl PlayerStrategy for RandomStrategyPlayer {
         } else if view.board.hints_remaining == view.board.hints_total
             || (view.board.hints_remaining > 0 && p < self.play_probability + self.hint_probability)
         {
-            let hint_player = view.board.player_to_left(&self.me);
+            let hint_player = view.board.player_to_left(self.me);
             let hint_card = view
-                .get_hand(&hint_player)
+                .get_hand(hint_player)
                 .choose(&mut rand::thread_rng())
                 .unwrap();
             let hinted = {

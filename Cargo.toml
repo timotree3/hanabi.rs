@@ -2,11 +2,12 @@
 name = "rust_hanabi"
 version = "0.1.0"
 authors = ["Jeff Wu <wuthefwasthat@gmail.com>"]
+edition = "2021"
 
 [dependencies]
-rand = "*"
-log = "*"
-getopts = "*"
-fnv = "*"
-float-ord = "*"
+rand = "0.3.0"
+log = "0.3.0"
+getopts = "0.2.14"
+fnv = "1.0.0"
+float-ord = "0.2.0"
 crossbeam = "0.2.5"

@@ -1,4 +1,4 @@
-use game::*;
+use crate::game::*;
 
 // Traits to implement for any valid Hanabi strategy
 
@@ -15,7 +15,7 @@ pub trait PlayerStrategy {
 // Shouldn't do much, except store configuration parameters and
 // possibility initialize some shared randomness between players
 pub trait GameStrategy {
-    fn initialize(&self, player: Player, view: &BorrowedGameView) -> Box<dyn PlayerStrategy>;
+    fn initialize(&self, me: Player, view: &BorrowedGameView) -> Box<dyn PlayerStrategy>;
 }
 
 // Represents configuration for a strategy.
@@ -23,4 +23,3 @@ pub trait GameStrategy {
 pub trait GameStrategyConfig {
     fn initialize(&self, opts: &GameOptions) -> Box<dyn GameStrategy>;
 }
-

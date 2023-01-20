@@ -1,12 +1,3 @@
-extern crate getopts;
-#[macro_use]
-extern crate log;
-extern crate crossbeam;
-extern crate float_ord;
-extern crate fnv;
-extern crate rand;
-extern crate serde_json;
-
 mod game;
 mod helpers;
 mod json_output;
@@ -21,19 +12,7 @@ mod strategies {
 
 use getopts::Options;
 use std::str::FromStr;
-
-struct SimpleLogger;
-impl log::Log for SimpleLogger {
-    fn enabled(&self, metadata: &log::LogMetadata) -> bool {
-        metadata.level() <= log::LogLevel::Trace
-    }
-
-    fn log(&self, record: &log::LogRecord) {
-        if self.enabled(record.metadata()) {
-            println!("{} - {}", record.level(), record.args());
-        }
-    }
-}
+use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt};
 
 fn print_usage(program: &str, opts: Options) {
     print!("{}", opts.usage(&format!("Usage: {program} [options]")));
@@ -44,12 +23,6 @@ fn main() {
     let program = args[0].clone();
 
     let mut opts = Options::new();
-    opts.optopt(
-        "l",
-        "loglevel",
-        "Log level, one of 'trace', 'debug', 'info', 'warn', and 'error'",
-        "LOGLEVEL",
-    );
     opts.optopt(
         "n",
         "ntrials",
@@ -118,30 +91,20 @@ fn main() {
         return print!("{}", get_results_table());
     }
 
-    let l_opt = matches.opt_str("l");
-    let log_level_str = l_opt.as_deref().unwrap_or("info");
-    let log_level = match log_level_str {
-        "trace" => log::LogLevelFilter::Trace,
-        "debug" => log::LogLevelFilter::Debug,
-        "info" => log::LogLevelFilter::Info,
-        "warn" => log::LogLevelFilter::Warn,
-        "error" => log::LogLevelFilter::Error,
-        _ => {
-            print_usage(&program, opts);
-            panic!("Unexpected log level argument {log_level_str}");
-        }
-    };
-
-    log::set_logger(|max_log_level| {
-        max_log_level.set(log_level);
-        Box::new(SimpleLogger)
-    })
-    .unwrap();
+    // Register logging controlled by RUST_LOG=
+    let fmt_layer = tracing_subscriber::fmt::layer().with_target(false);
+    let filter_layer = tracing_subscriber::EnvFilter::try_from_default_env()
+        .or_else(|_| tracing_subscriber::EnvFilter::try_new("info"))
+        .unwrap();
+    tracing_subscriber::registry()
+        .with(filter_layer)
+        .with(fmt_layer)
+        .init();
 
     let n_trials = u32::from_str(matches.opt_str("n").as_deref().unwrap_or("1")).unwrap();
     let seed = matches
         .opt_str("s")
-        .map(|seed_str| u32::from_str(&seed_str).unwrap());
+        .map(|seed_str| u64::from_str(&seed_str).unwrap());
     let progress_info = matches
         .opt_str("o")
         .map(|freq_str| u32::from_str(&freq_str).unwrap());
@@ -168,7 +131,7 @@ fn main() {
 fn sim_games(
     n_players: u32,
     strategy_str: &str,
-    seed: Option<u32>,
+    seed: Option<u64>,
     n_trials: u32,
     n_threads: u32,
     progress_info: Option<u32>,

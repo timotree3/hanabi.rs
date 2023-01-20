@@ -1,6 +1,7 @@
 use fnv::FnvHashMap;
 use std::fmt;
 use std::ops::Range;
+use tracing::debug;
 
 pub type Player = u32;
 
@@ -179,7 +180,7 @@ impl fmt::Display for Firework {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub enum Hinted {
     Color(Color),
     Value(Value),
@@ -197,14 +198,14 @@ impl fmt::Display for Hinted {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct Hint {
     pub player: Player,
     pub hinted: Hinted,
 }
 
 // represents the choice a player made in a given turn
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub enum TurnChoice {
     Hint(Hint),
     Discard(usize), // index of card to discard
@@ -229,6 +230,7 @@ pub struct TurnRecord {
 pub type TurnHistory = Vec<TurnRecord>;
 
 // represents possible settings for the game
+#[derive(Copy, Clone)]
 pub struct GameOptions {
     pub num_players: u32,
     pub hand_size: u32,

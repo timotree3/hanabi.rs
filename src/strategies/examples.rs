@@ -1,6 +1,7 @@
 use crate::game::*;
 use crate::strategy::*;
-use rand::{self, Rng};
+use rand;
+use rand::prelude::SliceRandom;
 
 // dummy, terrible strategy, as an example
 #[derive(Clone)]
@@ -53,8 +54,9 @@ impl PlayerStrategy for RandomStrategyPlayer {
             || (view.board.hints_remaining > 0 && p < self.play_probability + self.hint_probability)
         {
             let hint_player = view.board.player_to_left(&self.me);
-            let hint_card = rand::thread_rng()
-                .choose(view.get_hand(&hint_player))
+            let hint_card = view
+                .get_hand(&hint_player)
+                .choose(&mut rand::thread_rng())
                 .unwrap();
             let hinted = {
                 if rand::random() {

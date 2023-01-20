@@ -1,12 +1,16 @@
 use fnv::FnvHashMap;
-use rand::{self, Rng, SeedableRng};
+use rand::prelude::SliceRandom;
+use rand::RngCore;
+use rand::{self, SeedableRng};
+use rand_chacha::ChaChaRng;
 use std::fmt;
+use tracing::{debug, info};
 
 use crate::game::*;
 use crate::json_output::*;
 use crate::strategy::*;
 
-fn new_deck(seed: u32) -> Cards {
+pub fn new_deck(seed: u64) -> Cards {
     let mut deck: Cards = Cards::new();
 
     for &color in COLORS.iter() {
@@ -17,7 +21,7 @@ fn new_deck(seed: u32) -> Cards {
         }
     }
 
-    rand::ChaChaRng::from_seed(&[seed]).shuffle(&mut deck[..]);
+    deck.shuffle(&mut ChaChaRng::seed_from_u64(seed));
     debug!("Deck: {:?}", deck);
     deck
 }
@@ -25,7 +29,7 @@ fn new_deck(seed: u32) -> Cards {
 pub fn simulate_once(
     opts: &GameOptions,
     game_strategy: Box<dyn GameStrategy>,
-    seed: u32,
+    seed: u64,
     output_json: bool,
 ) -> (GameState, Option<serde_json::Value>) {
     let deck = new_deck(seed);
@@ -157,7 +161,7 @@ impl fmt::Display for Histogram {
 pub fn simulate<T: ?Sized>(
     opts: &GameOptions,
     strat_config: Box<T>,
-    first_seed_opt: Option<u32>,
+    first_seed_opt: Option<u64>,
     n_trials: u32,
     n_threads: u32,
     progress_info: Option<u32>,
@@ -167,15 +171,15 @@ pub fn simulate<T: ?Sized>(
 where
     T: GameStrategyConfig + Sync,
 {
-    let first_seed = first_seed_opt.unwrap_or_else(|| rand::thread_rng().next_u32());
+    let first_seed = first_seed_opt.unwrap_or_else(|| rand::thread_rng().next_u64());
 
     let strat_config_ref = &strat_config;
     let json_output_pattern_ref = &json_output_pattern;
     crossbeam::scope(|scope| {
         let mut join_handles = Vec::new();
         for i in 0..n_threads {
-            let start = first_seed + ((n_trials * i) / n_threads);
-            let end = first_seed + ((n_trials * (i + 1)) / n_threads);
+            let start = first_seed + u64::from((n_trials * i) / n_threads);
+            let end = first_seed + u64::from((n_trials * (i + 1)) / n_threads);
             join_handles.push(scope.spawn(move || {
                 if progress_info.is_some() {
                     info!("Thread {} spawned: seeds {} to {}", i, start, end);
@@ -187,7 +191,9 @@ where
 
                 for seed in start..end {
                     if let Some(progress_info_frequency) = progress_info {
-                        if (seed > start) && ((seed - start) % progress_info_frequency == 0) {
+                        if (seed > start)
+                            && ((seed - start) % u64::from(progress_info_frequency) == 0)
+                        {
                             info!(
                                 "Thread {}, Trials: {}, Stats so far: {} score, {} lives, {}% win",
                                 i,
@@ -227,7 +233,7 @@ where
             }));
         }
 
-        let mut non_perfect_seeds: Vec<u32> = Vec::new();
+        let mut non_perfect_seeds: Vec<u64> = Vec::new();
         let mut score_histogram = Histogram::new();
         let mut lives_histogram = Histogram::new();
         for join_handle in join_handles {
@@ -250,7 +256,7 @@ where
 pub struct SimResult {
     pub scores: Histogram,
     pub lives: Histogram,
-    pub non_perfect_seed: Option<u32>,
+    pub non_perfect_seed: Option<u64>,
 }
 
 impl SimResult {

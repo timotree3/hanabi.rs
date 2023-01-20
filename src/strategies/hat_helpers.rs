@@ -173,7 +173,7 @@ pub trait PublicInformation: Clone {
             self.ask_question_wrapper(player, hand_info, answer_info.info_remaining(total_info))
         {
             let new_answer_info =
-                question.answer_info(&view.hand(player).collect::<Vec<_>>(), &view.board);
+                question.answer_info(&view.hand(player).cards().collect::<Vec<_>>(), &view.board);
             question.acknowledge_answer_info(new_answer_info.clone(), hand_info, &view.board);
             answer_info.combine(new_answer_info, total_info);
         }
@@ -249,7 +249,7 @@ pub trait PublicInformation: Clone {
         let mut info = self.get_player_info(view.me());
         for card_table in info.iter_mut() {
             for other_player in view.other_players() {
-                for card in view.hand(other_player) {
+                for card in view.hand(other_player).cards() {
                     card_table.decrement_weight_if_possible(card);
                 }
             }

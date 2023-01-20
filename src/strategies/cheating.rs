@@ -42,18 +42,14 @@ impl CheatingStrategy {
     }
 }
 impl GameStrategy for CheatingStrategy {
-    fn initialize<'game>(
-        &self,
-        player: Player,
-        view: &PlayerView<'game>,
-    ) -> Box<dyn PlayerStrategy<'game>> {
+    fn initialize<'game>(&self, view: &PlayerView<'game>) -> Box<dyn PlayerStrategy<'game>> {
         for player in view.other_players() {
-            let hand: Vec<Card> = view.hand(player).collect();
+            let hand: Vec<Card> = view.hand(player).cards().collect();
             self.player_hands_cheat.borrow_mut().insert(player, hand);
         }
         Box::new(CheatingPlayerStrategy {
             player_hands_cheat: self.player_hands_cheat.clone(),
-            me: player,
+            me: view.me(),
         })
     }
 }
@@ -66,7 +62,7 @@ impl CheatingPlayerStrategy {
     // last player might've drawn a new card, let him know!
     fn inform_last_player_cards(&self, view: &PlayerView<'_>) {
         let next = view.board.player_to_right(self.me);
-        let their_hand: Vec<Card> = view.hand(next).collect();
+        let their_hand: Vec<Card> = view.hand(next).cards().collect();
         self.player_hands_cheat
             .borrow_mut()
             .insert(next, their_hand);
@@ -75,7 +71,7 @@ impl CheatingPlayerStrategy {
     // give a throwaway hint - we only do this when we have nothing to do
     fn throwaway_hint(&self, view: &PlayerView<'_>) -> TurnChoice {
         let hint_player = view.board.player_to_left(self.me);
-        let hint_card = view.hand(hint_player).next().unwrap();
+        let hint_card = view.hand(hint_player).oldest_card();
         TurnChoice::Hint(Hint {
             player: hint_player,
             hinted: Hinted::Value(hint_card.value),
@@ -108,8 +104,8 @@ impl CheatingPlayerStrategy {
 
         let my_hand_value = self.hand_play_value(view, my_hand);
 
-        for player in view.board.get_players() {
-            if player != self.me && view.has_card(player, card) {
+        for player in view.other_players() {
+            if view.hand(player).contains(card) {
                 let their_hand_value = self.hand_play_value(view, hands.get(&player).unwrap());
                 // they can play this card, and have less urgent plays than i do
                 if their_hand_value < my_hand_value {

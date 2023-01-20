@@ -24,15 +24,11 @@ pub struct RandomStrategy {
     play_probability: f64,
 }
 impl GameStrategy for RandomStrategy {
-    fn initialize<'game>(
-        &self,
-        player: Player,
-        _: &PlayerView<'game>,
-    ) -> Box<dyn PlayerStrategy<'game>> {
+    fn initialize<'game>(&self, view: &PlayerView<'game>) -> Box<dyn PlayerStrategy<'game>> {
         Box::new(RandomStrategyPlayer {
             hint_probability: self.hint_probability,
             play_probability: self.play_probability,
-            me: player,
+            me: view.me(),
         })
     }
 }
@@ -60,6 +56,7 @@ impl<'game> PlayerStrategy<'game> for RandomStrategyPlayer {
             let hint_player = view.board.player_to_left(self.me);
             let hint_card = view
                 .hand(hint_player)
+                .cards()
                 .choose(&mut rand::thread_rng())
                 .unwrap();
             let hinted = {

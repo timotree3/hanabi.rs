@@ -199,14 +199,14 @@ impl fmt::Display for Hinted {
     }
 }
 
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub struct Hint {
     pub player: Player,
     pub hinted: Hinted,
 }
 
 // represents the choice a player made in a given turn
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub enum TurnChoice {
     Hint(Hint),
     Discard(usize), // index of card to discard
@@ -365,6 +365,14 @@ impl<'game> BoardState<'game> {
             || (self.deckless_turns_remaining == 0)
             || (self.score() == PERFECT_SCORE)
     }
+
+    pub fn top_deck(&self) -> Option<CardId> {
+        if self.deck_size > 0 {
+            Some(TOTAL_CARDS - self.deck_size)
+        } else {
+            None
+        }
+    }
 }
 impl fmt::Display for BoardState<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -415,24 +423,97 @@ pub struct PlayerView<'game> {
     /// The board state which is common knowledge
     pub board: BoardState<'game>,
 }
+
+pub struct HandView<'view> {
+    deck: Option<&'view [Card]>,
+    hand: &'view [CardId],
+}
+
+impl HandView<'_> {
+    fn deck(&self) -> &[Card] {
+        self.deck
+            .unwrap_or_else(|| panic!("Cannot look at your own hand!"))
+    }
+
+    pub fn cards(&self) -> impl DoubleEndedIterator<Item = Card> + '_ {
+        let deck = self.deck();
+        self.hand.iter().map(|&card_id| deck[card_id as usize])
+    }
+
+    pub fn pairs(&self) -> impl DoubleEndedIterator<Item = (CardId, Card)> + '_ {
+        let deck = self.deck();
+        self.hand
+            .iter()
+            .map(|&card_id| (card_id, deck[card_id as usize]))
+    }
+
+    pub fn size(&self) -> usize {
+        self.hand.len()
+    }
+
+    pub fn newest_card(&self) -> Card {
+        self.deck()[self.newest_id() as usize]
+    }
+
+    pub fn newest_id(&self) -> CardId {
+        *self.hand.last().unwrap()
+    }
+
+    pub fn oldest_card(&self) -> Card {
+        self.deck()[self.oldest_id() as usize]
+    }
+
+    pub fn nth_id(&self, index: usize) -> CardId {
+        self.hand[index]
+    }
+
+    pub fn nth_card(&self, index: usize) -> Card {
+        self.deck()[self.nth_id(index) as usize]
+    }
+
+    pub fn oldest_id(&self) -> CardId {
+        *self.hand.first().unwrap()
+    }
+
+    pub fn contains(&self, card: Card) -> bool {
+        self.cards().any(|other_card| card == other_card)
+    }
+}
+
 impl<'game> PlayerView<'game> {
     pub fn me(&self) -> Player {
         self.player
     }
 
-    pub fn hand(&self, player: Player) -> impl Iterator<Item = Card> + '_ {
-        assert!(self.player != player, "Cannot query about your own state!");
-        self.hands[player]
-            .iter()
-            .map(|&card_id| self.deck[card_id as usize])
+    pub fn hands(&self) -> &PerPlayer<Hand> {
+        &self.hands
+    }
+
+    pub fn hand(&self, player: Player) -> HandView<'_> {
+        let deck = if player == self.me() {
+            None
+        } else {
+            Some(self.deck)
+        };
+        HandView {
+            deck,
+            hand: &self.hands[player],
+        }
+    }
+
+    pub fn card(&self, card_id: CardId) -> Card {
+        if let Some(next_card_id) = self.board.top_deck() {
+            assert!(card_id < next_card_id, "Cannot look at cards in the deck!")
+        }
+        assert!(
+            !self.hands[self.player].contains(&card_id),
+            "Cannot look at own hand!"
+        );
+        self.deck[card_id as usize]
     }
 
     pub fn hand_size(&self, player: Player) -> usize {
         self.hands[player].len()
-    }
-
-    pub fn has_card(&self, player: Player, card: Card) -> bool {
-        self.hand(player).any(|other_card| card == other_card)
     }
 
     pub fn other_players(&self) -> impl Iterator<Item = Player> {
@@ -442,12 +523,15 @@ impl<'game> PlayerView<'game> {
 
     pub fn can_see(&self, card: Card) -> bool {
         self.other_players()
-            .any(|player| self.has_card(player, card))
+            .any(|player| self.hand(player).contains(card))
     }
 
     pub fn someone_else_can_play(&self) -> bool {
-        self.other_players()
-            .any(|player| self.hand(player).any(|card| self.board.is_playable(card)))
+        self.other_players().any(|player| {
+            self.hand(player)
+                .cards()
+                .any(|card| self.board.is_playable(card))
+        })
     }
 }
 
@@ -521,14 +605,6 @@ impl<'game> GameState<'game> {
         self.hands[player].iter().map(|&card_id| self.card(card_id))
     }
 
-    pub fn top_deck(&self) -> Option<CardId> {
-        if self.board.deck_size > 0 {
-            Some(self.deck.len() as CardId - self.board.deck_size)
-        } else {
-            None
-        }
-    }
-
     // get the game state view of a particular player
     pub fn get_view(&self, player: Player) -> PlayerView<'game> {
         PlayerView {
@@ -546,7 +622,7 @@ impl<'game> GameState<'game> {
     }
 
     fn replenish_hand(&mut self) {
-        if let Some(card_id) = self.top_deck() {
+        if let Some(card_id) = self.board.top_deck() {
             let card = self.card(card_id);
             let hand = &mut self.hands[self.board.player];
             if (hand.len() as u32) < self.board.opts.hand_size {

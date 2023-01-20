@@ -43,7 +43,7 @@ pub fn simulate_once(
     let mut game = GameState::new(opts, &deck);
 
     let mut strategies = PerPlayer::new(opts.num_players, |player| {
-        game_strategy.initialize(player, &game.get_view(player))
+        game_strategy.initialize(&game.get_view(player))
     });
 
     let mut actions = Vec::new();

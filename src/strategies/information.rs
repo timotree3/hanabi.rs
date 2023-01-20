@@ -329,7 +329,7 @@ impl<'game> MyPublicInformation<'game> {
         let hint_player = (hinter + 1 + (player_amt as u32)) % view.board.opts.num_players;
 
         let card_index = card_indices[player_amt];
-        let hint_card = view.hand(hint_player).nth(card_index).unwrap();
+        let hint_card = view.hand(hint_player).nth_card(card_index);
 
         let hint_option_set = if hint_info_we_can_give_to_this_player == 3 {
             match hint_type {
@@ -343,7 +343,7 @@ impl<'game> MyPublicInformation<'game> {
                     // NOTE: this doesn't do that much better than just hinting
                     // the first thing that doesn't match the hint_card
                     let mut hint_option_set = Vec::new();
-                    for card in view.hand(hint_player) {
+                    for card in view.hand(hint_player).cards() {
                         if card.color != hint_card.color {
                             hint_option_set.push(Hinted::Color(card.color));
                         }
@@ -368,7 +368,7 @@ impl<'game> MyPublicInformation<'game> {
                 2 => {
                     // Any value hint for a card other than the first
                     let mut hint_option_set = Vec::new();
-                    for card in view.hand(hint_player) {
+                    for card in view.hand(hint_player).cards() {
                         if card.value != hint_card.value {
                             hint_option_set.push(Hinted::Value(card.value));
                         }
@@ -378,7 +378,7 @@ impl<'game> MyPublicInformation<'game> {
                 3 => {
                     // Any color hint for a card other than the first
                     let mut hint_option_set = Vec::new();
-                    for card in view.hand(hint_player) {
+                    for card in view.hand(hint_player).cards() {
                         if card.color != hint_card.color {
                             hint_option_set.push(Hinted::Color(card.color));
                         }
@@ -463,7 +463,10 @@ impl<'game> MyPublicInformation<'game> {
     fn someone_else_needs_hint(&self, view: &PlayerView<'_>) -> bool {
         // Does another player have a playable card, but doesn't know it?
         view.other_players().any(|player| {
-            let has_playable_card = view.hand(player).any(|card| view.board.is_playable(card));
+            let has_playable_card = view
+                .hand(player)
+                .cards()
+                .any(|card| view.board.is_playable(card));
             has_playable_card && !self.knows_playable_card(player)
         })
     }
@@ -663,11 +666,9 @@ impl InformationStrategy {
 impl GameStrategy for InformationStrategy {
     fn initialize<'game>(
         &self,
-        player: Player,
         view: &PlayerView<'game>,
     ) -> Box<dyn PlayerStrategy<'game> + 'game> {
         Box::new(InformationPlayerStrategy {
-            me: player,
             public_info: MyPublicInformation::new(view.board.clone()),
             new_public_info: None,
             last_view: view.clone(),
@@ -676,7 +677,6 @@ impl GameStrategy for InformationStrategy {
 }
 
 pub struct InformationPlayerStrategy<'game> {
-    me: Player,
     public_info: MyPublicInformation<'game>,
     // Inside decide(), modify a copy of public_info and put it here. After that, when
     // calling update, check that the updated public_info matches new_public_info.
@@ -698,8 +698,8 @@ impl InformationPlayerStrategy<'_> {
     fn get_play_score(&self, view: &PlayerView<'_>, card: Card) -> f32 {
         let mut num_with = 1;
         if view.board.deck_size > 0 {
-            for player in view.board.get_players() {
-                if player != self.me && view.has_card(player, card) {
+            for player in view.other_players() {
+                if view.hand(player).contains(card) {
                     num_with += 1;
                 }
             }
@@ -750,7 +750,7 @@ impl InformationPlayerStrategy<'_> {
 
         let mut goodness = 1.0;
         for (i, card_table) in hand_info.iter_mut().enumerate() {
-            let card = view.hand(hint_player).nth(i).unwrap();
+            let card = view.hand(hint_player).nth_card(i);
             if card_table.probability_is_dead(&view.board) == 1.0 {
                 continue;
             }

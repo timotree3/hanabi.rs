@@ -86,10 +86,8 @@ impl fmt::Display for CardCounts {
             write!(f, "{color}: ")?;
             for &value in VALUES.iter() {
                 let count = self.get_count(Card::new(color, value));
-                let total = get_count_for_value(value);
-                write!(f, "{count}/{total} {value}s")?;
-                if value != FINAL_VALUE {
-                    f.write_str(", ")?;
+                for _ in 0..count {
+                    write!(f, "{value}")?;
                 }
             }
             f.write_str("\n")?;

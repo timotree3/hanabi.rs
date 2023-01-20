@@ -99,6 +99,13 @@ pub trait CardInfo {
         self.probability_of_predicate(&|card| board.is_dispensable(card))
     }
 
+    fn mark_hinted(&mut self, hinted: Hinted, touched: bool) {
+        match hinted {
+            Hinted::Color(color) => self.mark_color(color, touched),
+            Hinted::Value(value) => self.mark_value(value, touched),
+        }
+    }
+
     // mark a whole color as false
     fn mark_color_false(&mut self, color: Color);
     // mark a color as correct

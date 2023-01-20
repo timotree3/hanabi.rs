@@ -1,9 +1,9 @@
 use crate::{
     game::{
-        BoardState, CardId, GameOptions, Hand, Hint as HintChoice, Hinted, Player, PlayerView,
-        TurnChoice, TurnRecord, TurnResult, COLORS, TOTAL_CARDS, VALUES,
+        BoardState, Card, CardCounts, CardId, GameOptions, Hand, Hint as HintChoice, Hinted,
+        Player, PlayerView, TurnChoice, TurnRecord, TurnResult, COLORS, TOTAL_CARDS, VALUES,
     },
-    helpers::PerPlayer,
+    helpers::{CardInfo, CardPossibilityTable, PerPlayer},
     strategy::{GameStrategy, GameStrategyConfig, PlayerStrategy},
 };
 
@@ -39,6 +39,8 @@ impl GameStrategy for Strategy {
 
 struct Public<'game> {
     notes: Vec<Note>,
+    empathy: Vec<CardPossibilityTable>,
+    card_counts: CardCounts, // what any newly drawn card should be
     hands: PerPlayer<Hand>,
     board: BoardState<'game>,
 }
@@ -47,6 +49,11 @@ impl<'game> Public<'game> {
     fn first_turn(view: &PlayerView<'game>) -> Public<'game> {
         Public {
             notes: vec![Note::default(); TOTAL_CARDS as usize],
+            empathy: vec![
+                CardPossibilityTable::new();
+                (view.board.opts.num_players * view.board.opts.hand_size) as usize
+            ],
+            card_counts: CardCounts::new(),
             hands: view.hands().clone(),
             board: view.board.clone(),
         }
@@ -65,7 +72,29 @@ impl<'game> Public<'game> {
         !note.clued && !note.play
     }
 
-    fn categorize_hint(&self, hint: &Hint) -> Option<HintCategory> {
+    fn describe_hint(&self, hint: &Hint) -> Option<HintDesc> {
+        let new_known_plays: Vec<CardId> = self.hands[hint.receiver]
+            .iter()
+            .copied()
+            .filter(|&card_id| !self.note(card_id).play && self.is_empathy_playable(card_id))
+            .collect();
+
+        self.categorize_hint(hint, &new_known_plays)
+            .map(|category| HintDesc {
+                new_known_plays,
+                category,
+            })
+    }
+
+    fn categorize_hint(&self, hint: &Hint, new_known_plays: &[CardId]) -> Option<HintCategory> {
+        let is_fill_in = new_known_plays
+            .iter()
+            .any(|&card_id| self.note(card_id).clued && hint.touched.contains(&card_id));
+
+        if is_fill_in {
+            return Some(HintCategory::FillInPlay);
+        }
+
         if let Hinted::Color(_) = hint.hinted {
             if let Some(target) = self.color_clue_target(hint.receiver, &hint.touched) {
                 return Some(HintCategory::RefPlay(target));
@@ -80,12 +109,20 @@ impl<'game> Public<'game> {
     }
 
     fn interpret_hint(&mut self, hint: &Hint) {
-        match self.categorize_hint(hint) {
-            Some(HintCategory::RefPlay(target)) => {
+        let HintDesc {
+            new_known_plays,
+            category,
+        } = self.describe_hint(hint).expect("unconventional hint given");
+
+        for card_id in new_known_plays {
+            self.note_mut(card_id).play = true;
+        }
+
+        match category {
+            HintCategory::RefPlay(target) => {
                 self.note_mut(target).play = true;
             }
-            Some(HintCategory::EightClueStall) => {}
-            None => panic!("unconventional hint given"),
+            HintCategory::EightClueStall | HintCategory::FillInPlay => {}
         }
 
         for &card_id in &hint.touched {
@@ -113,9 +150,50 @@ impl<'game> Public<'game> {
         None
     }
 
+    fn reveal_copy(&mut self, card: Card, card_id: CardId) {
+        self.empathy
+            .iter_mut()
+            .enumerate()
+            .for_each(|(other_card_id, table)| {
+                if other_card_id as CardId != card_id {
+                    table.decrement_weight_if_possible(card)
+                }
+            })
+    }
+
+    // Update internal state to reflect that a card has been drawn
+    fn draw_card(&mut self) {
+        self.empathy
+            .push(CardPossibilityTable::from(&self.card_counts));
+    }
+
     fn update_board(&mut self, view: &PlayerView<'game>) {
+        if view.board.deck_size != self.board.deck_size {
+            assert!(view.board.deck_size == self.board.deck_size - 1);
+            self.draw_card();
+        }
         self.hands = view.hands().clone();
         self.board = view.board.clone();
+    }
+
+    fn update_empathy_for_hint(&mut self, hint: &Hint) {
+        // The touched cards are in the same order as the hand.
+        // Iterate over the two at the same time to efficiently determine that cards are not touched.
+        let mut hand_iter = self.hands[hint.receiver].iter().copied();
+        for &touched_card_id in &hint.touched {
+            for card_id in &mut hand_iter {
+                let is_touched = card_id == touched_card_id;
+                self.empathy[card_id as usize].mark_hinted(hint.hinted, is_touched);
+                if is_touched {
+                    break;
+                }
+            }
+        }
+    }
+
+    fn is_empathy_playable(&self, card_id: CardId) -> bool {
+        // TODO: Use delayed definition of playable
+        self.empathy[card_id as usize].probability_is_playable(&self.board) == 1.0
     }
 }
 
@@ -133,9 +211,32 @@ impl Hint {
     }
 }
 
+#[derive(Debug)]
+struct HintDesc {
+    new_known_plays: Vec<CardId>,
+    category: HintCategory,
+}
+
+#[derive(Debug, Clone, Copy)]
 enum HintCategory {
     RefPlay(CardId),
+    FillInPlay,
     EightClueStall,
+}
+
+impl HintCategory {
+    fn new_plays(&self) -> usize {
+        match self {
+            HintCategory::RefPlay(_) => 1,
+            HintCategory::FillInPlay | HintCategory::EightClueStall => 0,
+        }
+    }
+}
+
+impl HintDesc {
+    fn new_plays(&self) -> usize {
+        self.new_known_plays.len() + self.category.new_plays()
+    }
 }
 
 #[derive(Debug, Copy, Clone, Default)]
@@ -150,26 +251,44 @@ struct RsPlayer<'game> {
 }
 
 impl RsPlayer<'_> {
-    fn best_hint(&self, view: &PlayerView<'_>) -> Option<HintChoice> {
-        let mut best = None;
+    /// Determines the best hint available.
+    ///
+    /// Mutates self in place for efficiency but should leave it unchanged upon exiting.
+    fn best_hint(&mut self, view: &PlayerView<'_>) -> Option<HintChoice> {
+        let mut best: Option<(Hint, HintDesc)> = None;
 
+        let actual_empathy = self.public.empathy.clone();
         for hint in possible_hints(view) {
-            match self.public.categorize_hint(&hint) {
-                Some(HintCategory::RefPlay(target)) => {
-                    if view.board.is_playable(view.card(target)) {
-                        best = Some(hint);
-                    }
+            // Update the empathy as it would be after the hint was given
+            self.public.update_empathy_for_hint(&hint);
+
+            if let Some(desc) = self.public.describe_hint(&hint) {
+                if is_hint_conventional(view, desc.category) {
+                    best = Some(if let Some((best_hint, best_desc)) = best {
+                        if desc.new_plays() > best_desc.new_plays() {
+                            (hint, desc)
+                        } else {
+                            (best_hint, best_desc)
+                        }
+                    } else {
+                        (hint, desc)
+                    });
                 }
-                Some(HintCategory::EightClueStall) => {
-                    if best.is_none() {
-                        best = Some(hint);
-                    }
-                }
-                None => {}
             }
+
+            // Restore the empathy
+            self.public.empathy.clone_from(&actual_empathy);
         }
 
-        best.map(|hint| hint.choice())
+        best.map(|(hint, _)| hint.choice())
+    }
+}
+
+fn is_hint_conventional(view: &PlayerView<'_>, hint_category: HintCategory) -> bool {
+    match hint_category {
+        HintCategory::RefPlay(target) => view.board.is_playable(view.card(target)),
+        HintCategory::FillInPlay => true,
+        HintCategory::EightClueStall => true,
     }
 }
 
@@ -250,14 +369,22 @@ impl<'game> PlayerStrategy<'game> for RsPlayer<'game> {
         match (turn_record.choice, &turn_record.result) {
             (TurnChoice::Hint(HintChoice { player, hinted }), TurnResult::Hint(touched)) => {
                 let touched_ids: Vec<CardId> = touched_ids(player, touched, view.hands()).collect();
-                self.public.interpret_hint(&Hint {
+                let hint = Hint {
                     receiver: player,
                     hinted,
                     touched: touched_ids,
-                });
+                };
+                self.public.update_empathy_for_hint(&hint);
+                self.public.interpret_hint(&hint);
             }
-            (TurnChoice::Discard(_), TurnResult::Discard(_)) => {}
-            (TurnChoice::Play(_), TurnResult::Play(_, _)) => {}
+            (TurnChoice::Discard(index), TurnResult::Discard(card)) => {
+                let card_id = self.public.hands[self.public.board.player][index];
+                self.public.reveal_copy(*card, card_id);
+            }
+            (TurnChoice::Play(index), TurnResult::Play(card, _)) => {
+                let card_id = self.public.hands[self.public.board.player][index];
+                self.public.reveal_copy(*card, card_id);
+            }
             _ => panic!("mismatched turn choice and turn result"),
         }
 

@@ -27,3 +27,20 @@ Conventions:
 - Bomb lock. Bombing PTD or known trash triggers a lock
 - Unlock Promise
     - With a locked hand, things get complicated
+
+
+Per card knowledge
+```rust
+struct Note {
+    play_queued: Option<PlayQueued>,
+    permission_to_discard: bool,
+    clued: bool,
+}
+
+struct PlayQueued {
+    stacks: PlayStacks,
+    // All already queued plays in own hand. All known plays in giver's hand that there would be time to play
+    after: Vec<CardId>
+}
+
+```

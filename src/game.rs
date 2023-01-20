@@ -16,6 +16,8 @@ pub type Value = u32;
 pub const NUM_VALUES: usize = 5;
 pub const VALUES: [Value; NUM_VALUES] = [1, 2, 3, 4, 5];
 pub const FINAL_VALUE: Value = 5;
+/// Total number of cards in the deck (including starting hands)
+pub const TOTAL_CARDS: u32 = NUM_COLORS as u32 * 10;
 
 pub fn get_count_for_value(value: Value) -> u32 {
     match value {
@@ -28,7 +30,7 @@ pub fn get_count_for_value(value: Value) -> u32 {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Card {
     pub color: Color,
     pub value: Value,
@@ -64,17 +66,17 @@ impl CardCounts {
         CardCounts { counts }
     }
 
-    pub fn get_count(&self, card: &Card) -> u32 {
-        *self.counts.get(card).unwrap()
+    pub fn get_count(&self, card: Card) -> u32 {
+        *self.counts.get(&card).unwrap()
     }
 
-    pub fn remaining(&self, card: &Card) -> u32 {
+    pub fn remaining(&self, card: Card) -> u32 {
         let count = self.get_count(card);
         get_count_for_value(card.value) - count
     }
 
-    pub fn increment(&mut self, card: &Card) {
-        let count = self.counts.get_mut(card).unwrap();
+    pub fn increment(&mut self, card: Card) {
+        let count = self.counts.get_mut(&card).unwrap();
         *count += 1;
     }
 }
@@ -83,7 +85,7 @@ impl fmt::Display for CardCounts {
         for &color in COLORS.iter() {
             write!(f, "{color}: ")?;
             for &value in VALUES.iter() {
-                let count = self.get_count(&Card::new(color, value));
+                let count = self.get_count(Card::new(color, value));
                 let total = get_count_for_value(value);
                 write!(f, "{count}/{total} {value}s")?;
                 if value != FINAL_VALUE {
@@ -96,37 +98,34 @@ impl fmt::Display for CardCounts {
     }
 }
 
-pub type Cards = Vec<Card>;
-
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Discard {
-    pub cards: Cards,
+    size: u32,
     counts: CardCounts,
 }
 impl Discard {
     pub fn new() -> Discard {
         Discard {
-            cards: Cards::new(),
+            size: 0,
             counts: CardCounts::new(),
         }
     }
 
-    pub fn has_all(&self, card: &Card) -> bool {
+    pub fn has_all(&self, card: Card) -> bool {
         self.counts.remaining(card) == 0
     }
 
-    pub fn remaining(&self, card: &Card) -> u32 {
+    pub fn remaining(&self, card: Card) -> u32 {
         self.counts.remaining(card)
     }
 
     pub fn place(&mut self, card: Card) {
-        self.counts.increment(&card);
-        self.cards.push(card);
+        self.size += 1;
+        self.counts.increment(card);
     }
 }
 impl fmt::Display for Discard {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // write!(f, "{}", self.cards)?;
         write!(f, "{}", self.counts)
     }
 }
@@ -160,7 +159,7 @@ impl Firework {
         self.top == FINAL_VALUE
     }
 
-    pub fn place(&mut self, card: &Card) {
+    pub fn place(&mut self, card: Card) {
         assert!(
             card.color == self.color,
             "Attempted to place card on firework of wrong color!"
@@ -232,7 +231,7 @@ pub struct TurnRecord {
 pub type TurnHistory = Vec<TurnRecord>;
 
 // represents possible settings for the game
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct GameOptions {
     pub num_players: u32,
     pub hand_size: u32,
@@ -247,31 +246,26 @@ pub struct GameOptions {
 // State of everything except the player's hands
 // Is all completely common knowledge
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct BoardState {
+pub struct BoardState<'game> {
     pub deck_size: u32,
-    pub total_cards: u32,
     pub discard: Discard,
     pub fireworks: FnvHashMap<Color, Firework>,
-
-    pub num_players: u32,
 
     // which turn is it?
     pub turn: u32,
     pub turn_history: TurnHistory,
     // // whose turn is it?
     pub player: Player,
-    pub hand_size: u32,
 
-    pub hints_total: u32,
     pub hints_remaining: u32,
-    pub allow_empty_hints: bool,
-    pub lives_total: u32,
     pub lives_remaining: u32,
     // only relevant when deck runs out
     pub deckless_turns_remaining: u32,
+
+    pub opts: &'game GameOptions,
 }
-impl BoardState {
-    pub fn new(opts: &GameOptions, deck_size: u32) -> BoardState {
+impl<'game> BoardState<'game> {
+    pub fn new(opts: &'game GameOptions, deck_size: u32) -> Self {
         let fireworks = COLORS
             .iter()
             .map(|&color| (color, Firework::new(color)))
@@ -279,26 +273,21 @@ impl BoardState {
 
         BoardState {
             deck_size,
-            total_cards: deck_size,
             fireworks,
             discard: Discard::new(),
-            num_players: opts.num_players,
-            hand_size: opts.hand_size,
             player: 0,
             turn: 1,
-            allow_empty_hints: opts.allow_empty_hints,
-            hints_total: opts.num_hints,
             hints_remaining: opts.num_hints,
-            lives_total: opts.num_lives,
             lives_remaining: opts.num_lives,
             turn_history: Vec::new(),
             // number of turns to play with deck length ran out
             deckless_turns_remaining: opts.num_players + 1,
+            opts,
         }
     }
 
     fn try_add_hint(&mut self) {
-        if self.hints_remaining < self.hints_total {
+        if self.hints_remaining < self.opts.num_hints {
             self.hints_remaining += 1;
         }
     }
@@ -312,7 +301,7 @@ impl BoardState {
     }
 
     // returns whether a card would place on a firework
-    pub fn is_playable(&self, card: &Card) -> bool {
+    pub fn is_playable(&self, card: Card) -> bool {
         Some(card.value) == self.get_firework(card.color).needed_value()
     }
 
@@ -331,7 +320,7 @@ impl BoardState {
                 continue;
             }
             let needed_card = Card::new(color, value);
-            if self.discard.has_all(&needed_card) {
+            if self.discard.has_all(needed_card) {
                 // already discarded all of these
                 return value - 1;
             }
@@ -340,7 +329,7 @@ impl BoardState {
     }
 
     // is never going to play, based on discard + fireworks
-    pub fn is_dead(&self, card: &Card) -> bool {
+    pub fn is_dead(&self, card: Card) -> bool {
         let firework = self.fireworks.get(&card.color).unwrap();
         firework.complete()
             || card.value < firework.needed_value().unwrap()
@@ -348,12 +337,12 @@ impl BoardState {
     }
 
     // can be discarded without necessarily sacrificing score, based on discard + fireworks
-    pub fn is_dispensable(&self, card: &Card) -> bool {
+    pub fn is_dispensable(&self, card: Card) -> bool {
         self.is_dead(card) || self.discard.remaining(card) != 1
     }
 
     pub fn get_players(&self) -> Range<Player> {
-        0..self.num_players
+        0..self.opts.num_players
     }
 
     pub fn score(&self) -> Score {
@@ -361,14 +350,14 @@ impl BoardState {
     }
 
     pub fn discard_size(&self) -> u32 {
-        self.discard.cards.len() as u32
+        self.discard.size
     }
 
     pub fn player_to_left(&self, player: Player) -> Player {
-        (player + 1) % self.num_players
+        (player + 1) % self.opts.num_players
     }
     pub fn player_to_right(&self, player: Player) -> Player {
-        (player + self.num_players - 1) % self.num_players
+        (player + self.opts.num_players - 1) % self.opts.num_players
     }
 
     pub fn is_over(&self) -> bool {
@@ -377,7 +366,7 @@ impl BoardState {
             || (self.score() == PERFECT_SCORE)
     }
 }
-impl fmt::Display for BoardState {
+impl fmt::Display for BoardState<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.is_over() {
             writeln!(f, "Turn {} (GAME ENDED):", self.turn)?;
@@ -396,12 +385,12 @@ impl fmt::Display for BoardState {
         writeln!(
             f,
             "{}/{} hints remaining",
-            self.hints_remaining, self.hints_total
+            self.hints_remaining, self.opts.num_hints
         )?;
         writeln!(
             f,
             "{}/{} lives remaining",
-            self.lives_remaining, self.lives_total
+            self.lives_remaining, self.opts.num_lives
         )?;
         f.write_str("Fireworks:\n")?;
         for &color in COLORS.iter() {
@@ -414,144 +403,67 @@ impl fmt::Display for BoardState {
     }
 }
 
-// complete game view of a given player
-pub trait GameView {
-    fn me(&self) -> Player;
-    fn get_hand(&self, player: Player) -> &Cards;
-    fn get_board(&self) -> &BoardState;
-
-    fn my_hand_size(&self) -> usize;
-
-    fn hand_size(&self, player: Player) -> usize {
-        if self.me() == player {
-            self.my_hand_size()
-        } else {
-            self.get_hand(player).len()
-        }
-    }
-
-    fn has_card(&self, player: Player, card: &Card) -> bool {
-        self.get_hand(player)
-            .iter()
-            .any(|other_card| card == other_card)
-    }
-
-    fn get_other_players(&self) -> Vec<Player> {
-        self.get_board()
-            .get_players()
-            .filter(|&player| player != self.me())
-            .collect()
-    }
-
-    fn can_see(&self, card: &Card) -> bool {
-        self.get_other_players()
-            .iter()
-            .any(|&player| self.has_card(player, card))
-    }
-
-    fn someone_else_can_play(&self) -> bool {
-        self.get_other_players().iter().any(|&player| {
-            self.get_hand(player)
-                .iter()
-                .any(|card| self.get_board().is_playable(card))
-        })
-    }
+// Player-specific view on the game state
+#[derive(Debug, Clone)]
+pub struct PlayerView<'game> {
+    /// The player whose view it is
+    player: Player,
+    /// The mapping from CardIds to cards, which is private and accessible only through careful methods
+    deck: &'game [Card],
+    /// The card IDs held by the players, which is common knowledge.
+    hands: PerPlayer<Hand>,
+    /// The board state which is common knowledge
+    pub board: BoardState<'game>,
 }
-
-// version of game view that is borrowed.  used in simulator for efficiency,
-#[derive(Debug)]
-pub struct BorrowedGameView<'a> {
-    // the player whose view it is
-    pub player: Player,
-    pub hand_size: usize,
-    // the cards of the other players, as well as the information they have
-    pub other_hands: FnvHashMap<Player, &'a Cards>,
-    // board state
-    pub board: &'a BoardState,
-}
-impl<'a> GameView for BorrowedGameView<'a> {
-    fn me(&self) -> Player {
+impl<'game> PlayerView<'game> {
+    pub fn me(&self) -> Player {
         self.player
     }
-    fn my_hand_size(&self) -> usize {
-        self.hand_size
-    }
-    fn get_hand(&self, player: Player) -> &Cards {
-        assert!(self.me() != player, "Cannot query about your own state!");
-        self.other_hands.get(&player).unwrap()
-    }
-    fn get_board(&self) -> &BoardState {
-        self.board
-    }
-}
 
-// version of game view, may be useful to strategies
-#[derive(Debug)]
-pub struct OwnedGameView {
-    // the player whose view it is
-    pub player: Player,
-    pub hand_size: usize,
-    // the cards of the other players, as well as the information they have
-    pub other_hands: FnvHashMap<Player, Cards>,
-    // board state
-    pub board: BoardState,
-}
-impl OwnedGameView {
-    pub fn clone_from(borrowed_view: &BorrowedGameView) -> OwnedGameView {
-        let other_hands = borrowed_view
-            .other_hands
+    pub fn hand(&self, player: Player) -> impl Iterator<Item = Card> + '_ {
+        assert!(self.player != player, "Cannot query about your own state!");
+        self.hands[player]
             .iter()
-            .map(|(&other_player, &player_state)| (other_player, player_state.clone()))
-            .collect::<FnvHashMap<_, _>>();
+            .map(|&card_id| self.deck[card_id as usize])
+    }
 
-        OwnedGameView {
-            player: borrowed_view.player,
-            hand_size: borrowed_view.hand_size,
-            other_hands,
-            board: (*borrowed_view.board).clone(),
-        }
+    pub fn hand_size(&self, player: Player) -> usize {
+        self.hands[player].len()
+    }
+
+    pub fn has_card(&self, player: Player, card: Card) -> bool {
+        self.hand(player).any(|other_card| card == other_card)
+    }
+
+    pub fn other_players(&self) -> impl Iterator<Item = Player> {
+        let me = self.player;
+        self.board.get_players().filter(move |&player| player != me)
+    }
+
+    pub fn can_see(&self, card: Card) -> bool {
+        self.other_players()
+            .any(|player| self.has_card(player, card))
+    }
+
+    pub fn someone_else_can_play(&self) -> bool {
+        self.other_players()
+            .any(|player| self.hand(player).any(|card| self.board.is_playable(card)))
     }
 }
-impl GameView for OwnedGameView {
-    fn me(&self) -> Player {
-        self.player
-    }
-    fn my_hand_size(&self) -> usize {
-        self.hand_size
-    }
-    fn get_hand(&self, player: Player) -> &Cards {
-        assert!(self.me() != player, "Cannot query about your own state!");
-        self.other_hands.get(&player).unwrap()
-    }
-    fn get_board(&self) -> &BoardState {
-        &self.board
-    }
-}
 
-// Internally, every card is annotated with its index in the deck in order to
-// generate easy-to-interpret JSON output. These annotations are stripped off
-// when passing GameViews to strategies.
-//
-// TODO: Maybe we should give strategies access to the annotations as well?
-// This could simplify code like in InformationPlayerStrategy::update_public_info_for_discard_or_play.
-// Also, this would let a strategy publish "notes" on cards more easily.
-pub type AnnotatedCard = (usize, Card);
-pub type AnnotatedCards = Vec<AnnotatedCard>;
-
-fn strip_annotations(cards: &AnnotatedCards) -> Cards {
-    cards.iter().map(|(_i, card)| card.clone()).collect()
-}
+// Every card is represented by its index in the deck.
+pub type CardId = u32;
+pub type Hand = Vec<CardId>;
 
 // complete game state (known to nobody!)
 #[derive(Debug)]
-pub struct GameState {
-    pub hands: PerPlayer<AnnotatedCards>,
-    // used to construct BorrowedGameViews
-    pub unannotated_hands: PerPlayer<Cards>,
-    pub board: BoardState,
-    pub deck: AnnotatedCards,
+pub struct GameState<'game> {
+    pub hands: PerPlayer<Hand>,
+    pub deck: &'game [Card],
+    pub board: BoardState<'game>,
 }
-impl fmt::Display for GameState {
+
+impl fmt::Display for GameState<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("\n")?;
         f.write_str("======\n")?;
@@ -559,9 +471,10 @@ impl fmt::Display for GameState {
         f.write_str("======\n")?;
         for player in self.board.get_players() {
             let hand = &self.hands[player];
-            write!(f, "player {}:", player)?;
-            for (_i, card) in hand.iter() {
-                write!(f, "    {}", card)?;
+            write!(f, "player {player}:")?;
+            for &card_id in hand {
+                let card = self.card(card_id);
+                write!(f, "    {card}")?;
             }
             f.write_str("\n")?;
         }
@@ -573,31 +486,19 @@ impl fmt::Display for GameState {
     }
 }
 
-impl GameState {
-    pub fn new(opts: &GameOptions, deck: Cards) -> GameState {
-        // We enumerate the cards in reverse order since they'll be drawn from the back of the deck.
-        let mut deck: AnnotatedCards = deck.into_iter().rev().enumerate().rev().collect();
-        let mut board = BoardState::new(opts, deck.len() as u32);
-
-        let hands = PerPlayer::new(opts.num_players, |_| {
-            (0..opts.hand_size)
-                .map(|_| {
-                    // we can assume the deck is big enough to draw initial hands
-                    board.deck_size -= 1;
-                    deck.pop().unwrap()
-                })
-                .collect::<Vec<_>>()
+impl<'game> GameState<'game> {
+    pub fn new(opts: &'game GameOptions, deck: &'game [Card]) -> Self {
+        // Deal the starting hands by populating them with ascending card IDs
+        // We deal them in exactly this way to match the way hanab.live does it
+        let hands = PerPlayer::new(opts.num_players, |player| {
+            (player * opts.hand_size..((player + 1) * opts.hand_size)).collect::<Vec<_>>()
         });
 
-        let unannotated_hands =
-            PerPlayer::new(opts.num_players, |player| strip_annotations(&hands[player]));
+        let cards_in_starting_hands = opts.num_players * opts.hand_size;
 
-        GameState {
-            hands,
-            unannotated_hands,
-            board,
-            deck,
-        }
+        let board = BoardState::new(opts, deck.len() as u32 - cards_in_starting_hands);
+
+        GameState { hands, deck, board }
     }
 
     pub fn get_players(&self) -> Range<Player> {
@@ -612,47 +513,48 @@ impl GameState {
         self.board.score()
     }
 
-    // get the game state view of a particular player
-    pub fn get_view(&self, player: Player) -> BorrowedGameView {
-        let mut other_hands = FnvHashMap::default();
-        for (other_player, hand) in self.unannotated_hands.iter() {
-            if player != other_player {
-                other_hands.insert(other_player, hand);
-            }
-        }
-        BorrowedGameView {
-            player,
-            hand_size: self.hands[player].len(),
-            other_hands,
-            board: &self.board,
+    pub fn card(&self, card_id: CardId) -> Card {
+        self.deck[card_id as usize]
+    }
+
+    pub fn hand(&self, player: Player) -> impl Iterator<Item = Card> + '_ {
+        self.hands[player].iter().map(|&card_id| self.card(card_id))
+    }
+
+    pub fn top_deck(&self) -> Option<CardId> {
+        if self.board.deck_size > 0 {
+            Some(self.deck.len() as CardId - self.board.deck_size)
+        } else {
+            None
         }
     }
 
-    fn update_player_hand(&mut self) {
-        let player = self.board.player;
-        self.unannotated_hands[player] = strip_annotations(&self.hands[player]);
+    // get the game state view of a particular player
+    pub fn get_view(&self, player: Player) -> PlayerView<'game> {
+        PlayerView {
+            player,
+            deck: self.deck,
+            hands: self.hands.clone(),
+            board: self.board.clone(),
+        }
     }
 
     // takes a card from the player's hand, and replaces it if possible
     fn take_from_hand(&mut self, index: usize) -> Card {
-        // FIXME this code looks like it's awfully contorted in order to please the borrow checker.
-        // Can we have this look nicer?
-        let card = self.hands[self.board.player].remove(index).1;
-        self.update_player_hand();
-        card
+        let card_id = self.hands[self.board.player].remove(index);
+        self.card(card_id)
     }
 
     fn replenish_hand(&mut self) {
-        let hand = &mut self.hands[self.board.player];
-        if (hand.len() as u32) < self.board.hand_size {
-            if let Some(new_card) = self.deck.pop() {
+        if let Some(card_id) = self.top_deck() {
+            let card = self.card(card_id);
+            let hand = &mut self.hands[self.board.player];
+            if (hand.len() as u32) < self.board.opts.hand_size {
+                debug!("Drew new card, {card}");
+                hand.push(card_id);
                 self.board.deck_size -= 1;
-                debug!("Drew new card, {}", new_card.1);
-                hand.push(new_card);
             }
         }
-
-        self.update_player_hand();
     }
 
     pub fn process_choice(&mut self, choice: TurnChoice) -> TurnRecord {
@@ -672,18 +574,17 @@ impl GameState {
                         hint.player
                     );
 
-                    let hand = &self.hands[hint.player];
                     let results = match hint.hinted {
-                        Hinted::Color(color) => hand
-                            .iter()
-                            .map(|(_i, card)| card.color == color)
+                        Hinted::Color(color) => self
+                            .hand(hint.player)
+                            .map(|card| card.color == color)
                             .collect::<Vec<_>>(),
-                        Hinted::Value(value) => hand
-                            .iter()
-                            .map(|(_i, card)| card.value == value)
+                        Hinted::Value(value) => self
+                            .hand(hint.player)
+                            .map(|card| card.value == value)
                             .collect::<Vec<_>>(),
                     };
-                    if !self.board.allow_empty_hints {
+                    if !self.board.opts.allow_empty_hints {
                         assert!(
                             results.iter().any(|matched| *matched),
                             "Tried hinting an empty hint"
@@ -694,13 +595,13 @@ impl GameState {
                 }
                 TurnChoice::Discard(index) => {
                     assert!(
-                        self.board.hints_remaining < self.board.hints_total,
+                        self.board.hints_remaining < self.board.opts.num_hints,
                         "Tried to discard while at max hint count"
                     );
 
                     let card = self.take_from_hand(index);
                     debug!("Discard card in position {}, which is {}", index, card);
-                    self.board.discard.place(card.clone());
+                    self.board.discard.place(card);
 
                     self.board.try_add_hint();
                     TurnResult::Discard(card)
@@ -709,19 +610,19 @@ impl GameState {
                     let card = self.take_from_hand(index);
 
                     debug!("Playing card at position {}, which is {}", index, card);
-                    let playable = self.board.is_playable(&card);
+                    let playable = self.board.is_playable(card);
                     if playable {
                         {
                             let firework = self.board.get_firework_mut(card.color);
                             debug!("Successfully played {}!", card);
-                            firework.place(&card);
+                            firework.place(card);
                         }
                         if card.value == FINAL_VALUE {
                             debug!("Firework complete for {}!", card.color);
                             self.board.try_add_hint();
                         }
                     } else {
-                        self.board.discard.place(card.clone());
+                        self.board.discard.place(card);
                         self.board.lives_remaining -= 1;
                         debug!(
                             "Removing a life! Lives remaining: {}",
@@ -750,7 +651,7 @@ impl GameState {
             self.board.player_to_left(cur)
         };
         assert_eq!(
-            (self.board.turn - 1) % self.board.num_players,
+            (self.board.turn - 1) % self.board.opts.num_players,
             self.board.player
         );
 

@@ -11,20 +11,25 @@ use crate::helpers::PerPlayer;
 use crate::json_output::*;
 use crate::strategy::*;
 
-pub fn new_deck(seed: u64) -> Cards {
-    let mut deck: Cards = Cards::new();
-
-    for &color in COLORS.iter() {
-        for &value in VALUES.iter() {
-            for _ in 0..get_count_for_value(value) {
-                deck.push(Card::new(color, value));
-            }
-        }
-    }
+pub fn new_deck(seed: u64) -> Vec<Card> {
+    let mut deck: Vec<Card> = COLORS
+        .iter()
+        .flat_map(|&color| {
+            VALUES.iter().flat_map(move |&value| {
+                (0..get_count_for_value(value)).map(move |_| Card::new(color, value))
+            })
+        })
+        .collect();
 
     deck.shuffle(&mut ChaChaRng::seed_from_u64(seed));
     debug!("Deck: {:?}", deck);
     deck
+}
+
+pub struct GameResult {
+    score: u32,
+    lives_remaining: u32,
+    json_output: Option<serde_json::Value>,
 }
 
 pub fn simulate_once(
@@ -32,10 +37,10 @@ pub fn simulate_once(
     game_strategy: Box<dyn GameStrategy>,
     seed: u64,
     output_json: bool,
-) -> (GameState, Option<serde_json::Value>) {
+) -> GameResult {
     let deck = new_deck(seed);
 
-    let mut game = GameState::new(opts, deck.clone());
+    let mut game = GameState::new(opts, &deck);
 
     let mut strategies = PerPlayer::new(opts.num_players, |player| {
         game_strategy.initialize(player, &game.get_view(player))
@@ -57,12 +62,12 @@ pub fn simulate_once(
             actions.push(match choice {
                 TurnChoice::Hint(ref hint) => action_clue(hint),
                 TurnChoice::Play(index) => {
-                    let card = &game.hands[player][index];
-                    action_play(card)
+                    let card_id = game.hands[player][index];
+                    action_play(card_id)
                 }
                 TurnChoice::Discard(index) => {
-                    let card = &game.hands[player][index];
-                    action_discard(card)
+                    let card_id = game.hands[player][index];
+                    action_discard(card_id)
                 }
             });
         }
@@ -86,7 +91,12 @@ pub fn simulate_once(
     } else {
         None
     };
-    (game, json_output)
+
+    GameResult {
+        score: game.score(),
+        lives_remaining: game.board.lives_remaining,
+        json_output,
+    }
 }
 
 #[derive(Debug)]
@@ -195,25 +205,24 @@ where
                             );
                         }
                     }
-                    let (game, json_output) = simulate_once(
+                    let game_result = simulate_once(
                         opts,
                         strat_config_ref.initialize(opts),
                         seed,
                         json_output_pattern_ref.is_some(),
                     );
-                    let score = game.score();
-                    lives_histogram.insert(game.board.lives_remaining);
-                    score_histogram.insert(score);
-                    if score != PERFECT_SCORE {
+                    lives_histogram.insert(game_result.lives_remaining);
+                    score_histogram.insert(game_result.score);
+                    if game_result.score != PERFECT_SCORE {
                         non_perfect_seeds.push(seed);
                     }
                     if let Some(file_pattern) = json_output_pattern_ref {
-                        if !(score == PERFECT_SCORE && json_losses_only) {
+                        if !(game_result.score == PERFECT_SCORE && json_losses_only) {
                             let file_pattern =
                                 file_pattern.clone().replace("%s", &seed.to_string());
                             let path = std::path::Path::new(&file_pattern);
                             let file = std::fs::File::create(path).unwrap();
-                            serde_json::to_writer(file, &json_output.unwrap()).unwrap();
+                            serde_json::to_writer(file, &game_result.json_output.unwrap()).unwrap();
                         }
                     }
                 }

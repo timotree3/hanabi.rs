@@ -1,17 +1,17 @@
 use crate::game::*;
 use serde_json::*;
 
-fn color_value(color: &Color) -> usize {
+fn color_value(color: Color) -> usize {
     COLORS
         .iter()
-        .position(|&card_color| &card_color == color)
+        .position(|&card_color| card_color == color)
         .unwrap()
 }
 
-fn card_to_json(card: &Card) -> serde_json::Value {
+fn card_to_json(card: Card) -> serde_json::Value {
     json!({
         "rank": card.value,
-        "suitIndex": color_value(&card.color),
+        "suitIndex": color_value(card.color),
     })
 }
 
@@ -21,7 +21,7 @@ pub fn action_clue(hint: &Hint) -> serde_json::Value {
             json!({
                 "type": 2,
                 "target": hint.player,
-                "value": color_value(&color),
+                "value": color_value(color),
             })
         }
         Hinted::Value(value) => {
@@ -34,22 +34,22 @@ pub fn action_clue(hint: &Hint) -> serde_json::Value {
     }
 }
 
-pub fn action_play((i, _card): &AnnotatedCard) -> serde_json::Value {
+pub fn action_play(card_id: CardId) -> serde_json::Value {
     json!({
         "type": 0,
-        "target": i,
+        "target": card_id,
     })
 }
 
-pub fn action_discard((i, _card): &AnnotatedCard) -> serde_json::Value {
+pub fn action_discard(card_id: CardId) -> serde_json::Value {
     json!({
         "type": 1,
-        "target": i,
+        "target": card_id,
     })
 }
 
 pub fn json_format(
-    deck: &Cards,
+    deck: &[Card],
     actions: &Vec<serde_json::Value>,
     players: &Vec<String>,
 ) -> serde_json::Value {
@@ -61,7 +61,7 @@ pub fn json_format(
         "first_player": 0,
         "notes": players.iter().map(|_player| {json!([])}).collect::<Vec<_>>(), // TODO add notes
         // The deck is reversed since in our implementation we draw from the end of the deck.
-        "deck": deck.iter().rev().map(card_to_json).collect::<Vec<serde_json::Value>>(),
+        "deck": deck.iter().copied().map(card_to_json).collect::<Vec<serde_json::Value>>(),
         "actions": actions,
     })
 }

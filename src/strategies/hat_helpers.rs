@@ -77,16 +77,16 @@ pub trait Question {
     // how much info does this question ask for?
     fn info_amount(&self) -> u32;
     // get the answer to this question, given cards
-    fn answer(&self, hand: &Cards, board: &BoardState) -> u32;
+    fn answer(&self, hand: &[Card], board: &BoardState<'_>) -> u32;
     // process the answer to this question, updating card info
     fn acknowledge_answer(
         &self,
         value: u32,
         hand_info: &mut HandInfo<CardPossibilityTable>,
-        board: &BoardState,
+        board: &BoardState<'_>,
     );
 
-    fn answer_info(&self, hand: &Cards, board: &BoardState) -> ModulusInformation {
+    fn answer_info(&self, hand: &[Card], board: &BoardState<'_>) -> ModulusInformation {
         ModulusInformation::new(self.info_amount(), self.answer(hand, board))
     }
 
@@ -94,7 +94,7 @@ pub trait Question {
         &self,
         answer: ModulusInformation,
         hand_info: &mut HandInfo<CardPossibilityTable>,
-        board: &BoardState,
+        board: &BoardState<'_>,
     ) {
         assert!(self.info_amount() == answer.modulus);
         self.acknowledge_answer(answer.value, hand_info, board);
@@ -104,9 +104,6 @@ pub trait Question {
 pub trait PublicInformation: Clone {
     fn get_player_info(&self, player: Player) -> HandInfo<CardPossibilityTable>;
     fn set_player_info(&mut self, player: Player, hand_info: HandInfo<CardPossibilityTable>);
-
-    fn new(board: &BoardState) -> Self;
-    fn set_board(&mut self, board: &BoardState);
 
     /// If we store more state than just `HandInfo<CardPossibilityTable>`s, update it after `set_player_info` has been called.
     fn update_other_info(&mut self) {}
@@ -168,15 +165,16 @@ pub trait PublicInformation: Clone {
         player: Player,
         hand_info: &mut HandInfo<CardPossibilityTable>,
         total_info: u32,
-        view: &OwnedGameView,
+        view: &PlayerView<'_>,
     ) -> ModulusInformation {
-        assert!(player != view.player);
+        assert!(player != view.me());
         let mut answer_info = ModulusInformation::none();
         while let Some(question) =
             self.ask_question_wrapper(player, hand_info, answer_info.info_remaining(total_info))
         {
-            let new_answer_info = question.answer_info(view.get_hand(player), view.get_board());
-            question.acknowledge_answer_info(new_answer_info.clone(), hand_info, view.get_board());
+            let new_answer_info =
+                question.answer_info(&view.hand(player).collect::<Vec<_>>(), &view.board);
+            question.acknowledge_answer_info(new_answer_info.clone(), hand_info, &view.board);
             answer_info.combine(new_answer_info, total_info);
         }
         answer_info.cast_up(total_info);
@@ -187,7 +185,7 @@ pub trait PublicInformation: Clone {
         &self,
         player: Player,
         hand_info: &mut HandInfo<CardPossibilityTable>,
-        board: &BoardState,
+        board: &BoardState<'_>,
         mut info: ModulusInformation,
     ) {
         while let Some(question) = self.ask_question_wrapper(player, hand_info, info.modulus) {
@@ -200,11 +198,10 @@ pub trait PublicInformation: Clone {
     /// When deciding on a move, if we can choose between `total_info` choices,
     /// `self.get_hat_sum(total_info, view)` tells us which choice to take, and at the same time
     /// mutates `self` to simulate the choice becoming common knowledge.
-    fn get_hat_sum(&mut self, total_info: u32, view: &OwnedGameView) -> ModulusInformation {
+    fn get_hat_sum(&mut self, total_info: u32, view: &PlayerView<'_>) -> ModulusInformation {
         let (infos, new_player_hands): (Vec<_>, Vec<_>) = view
-            .get_other_players()
-            .iter()
-            .map(|&player| {
+            .other_players()
+            .map(|player| {
                 let mut hand_info = self.get_player_info(player);
                 let info = self.get_hat_info_for_player(player, &mut hand_info, total_info, view);
                 (info, (player, hand_info))
@@ -223,11 +220,10 @@ pub trait PublicInformation: Clone {
     /// When updating on a move, if we infer that the player making the move called `get_hat_sum()`
     /// and got the result `info`, we can call `self.update_from_hat_sum(info, view)` to update
     /// from that fact.
-    fn update_from_hat_sum(&mut self, mut info: ModulusInformation, view: &OwnedGameView) {
+    fn update_from_hat_sum(&mut self, mut info: ModulusInformation, view: &PlayerView<'_>) {
         let info_source = view.board.player;
         let (other_infos, mut new_player_hands): (Vec<_>, Vec<_>) = view
-            .get_other_players()
-            .into_iter()
+            .other_players()
             .filter(|player| *player != info_source)
             .map(|player| {
                 let mut hand_info = self.get_player_info(player);
@@ -239,22 +235,21 @@ pub trait PublicInformation: Clone {
         for other_info in other_infos {
             info.subtract(&other_info);
         }
-        let me = view.player;
-        if me == info_source {
+        if view.me() == info_source {
             assert!(info.value == 0);
         } else {
-            let mut my_hand = self.get_player_info(me);
-            self.update_from_hat_info_for_player(me, &mut my_hand, &view.board, info);
-            new_player_hands.push((me, my_hand));
+            let mut my_hand = self.get_player_info(view.me());
+            self.update_from_hat_info_for_player(view.me(), &mut my_hand, &view.board, info);
+            new_player_hands.push((view.me(), my_hand));
         }
         self.set_player_infos(new_player_hands);
     }
 
-    fn get_private_info(&self, view: &OwnedGameView) -> HandInfo<CardPossibilityTable> {
-        let mut info = self.get_player_info(view.player);
+    fn get_private_info(&self, view: &PlayerView<'_>) -> HandInfo<CardPossibilityTable> {
+        let mut info = self.get_player_info(view.me());
         for card_table in info.iter_mut() {
-            for hand in view.other_hands.values() {
-                for card in hand {
+            for other_player in view.other_players() {
+                for card in view.hand(other_player) {
                     card_table.decrement_weight_if_possible(card);
                 }
             }

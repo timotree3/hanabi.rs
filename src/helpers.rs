@@ -17,7 +17,7 @@ pub trait CardInfo {
     fn new() -> Self;
 
     // whether the card is possible
-    fn is_possible(&self, card: &Card) -> bool;
+    fn is_possible(&self, card: Card) -> bool;
 
     // mark all current possibilities for the card
     // this should generally be overridden, for efficiency
@@ -26,7 +26,7 @@ pub trait CardInfo {
         for &color in COLORS.iter() {
             for &value in VALUES.iter() {
                 let card = Card::new(color, value);
-                if self.is_possible(&card) {
+                if self.is_possible(card) {
                     v.push(card);
                 }
             }
@@ -36,7 +36,7 @@ pub trait CardInfo {
 
     // get probability weight for the card
     #[allow(unused_variables)]
-    fn get_weight(&self, card: &Card) -> f32 {
+    fn get_weight(&self, card: Card) -> f32 {
         1.0
     }
 
@@ -44,7 +44,7 @@ pub trait CardInfo {
         self.get_possibilities()
             .into_iter()
             .map(|card| {
-                let weight = self.get_weight(&card);
+                let weight = self.get_weight(card);
                 (card, weight)
             })
             .collect::<Vec<_>>()
@@ -53,19 +53,19 @@ pub trait CardInfo {
     fn total_weight(&self) -> f32 {
         self.get_possibilities()
             .iter()
-            .map(|card| self.get_weight(card))
+            .map(|&card| self.get_weight(card))
             .fold(0.0, |a, b| a + b)
     }
 
-    fn weighted_score<T>(&self, score_fn: &dyn Fn(&Card) -> T) -> f32
+    fn weighted_score<T>(&self, score_fn: &dyn Fn(Card) -> T) -> f32
     where
         f32: From<T>,
     {
         let mut total_score = 0.;
         let mut total_weight = 0.;
         for card in self.get_possibilities() {
-            let weight = self.get_weight(&card);
-            let score = f32::from(score_fn(&card));
+            let weight = self.get_weight(card);
+            let score = f32::from(score_fn(card));
             total_weight += weight;
             total_score += weight * score;
         }
@@ -76,8 +76,8 @@ pub trait CardInfo {
         self.weighted_score(&|card| card.value as f32)
     }
 
-    fn probability_of_predicate(&self, predicate: &dyn Fn(&Card) -> bool) -> f32 {
-        let f = |card: &Card| {
+    fn probability_of_predicate(&self, predicate: &dyn Fn(Card) -> bool) -> f32 {
+        let f = |card: Card| {
             if predicate(card) {
                 1.0
             } else {
@@ -87,15 +87,15 @@ pub trait CardInfo {
         self.weighted_score(&f)
     }
 
-    fn probability_is_playable(&self, board: &BoardState) -> f32 {
+    fn probability_is_playable(&self, board: &BoardState<'_>) -> f32 {
         self.probability_of_predicate(&|card| board.is_playable(card))
     }
 
-    fn probability_is_dead(&self, board: &BoardState) -> f32 {
+    fn probability_is_dead(&self, board: &BoardState<'_>) -> f32 {
         self.probability_of_predicate(&|card| board.is_dead(card))
     }
 
-    fn probability_is_dispensable(&self, board: &BoardState) -> f32 {
+    fn probability_is_dispensable(&self, board: &BoardState<'_>) -> f32 {
         self.probability_of_predicate(&|card| board.is_dispensable(card))
     }
 
@@ -249,7 +249,7 @@ impl CardInfo for SimpleCardInfo {
         }
         v
     }
-    fn is_possible(&self, card: &Card) -> bool {
+    fn is_possible(&self, card: Card) -> bool {
         self.color_info.is_possible(card.color) && self.value_info.is_possible(card.value)
     }
     fn mark_color_false(&mut self, color: Color) {
@@ -288,8 +288,8 @@ pub struct CardPossibilityTable {
 }
 impl CardPossibilityTable {
     // mark a possible card as false
-    pub fn mark_false(&mut self, card: &Card) {
-        self.possible.remove(card);
+    pub fn mark_false(&mut self, card: Card) {
+        self.possible.remove(&card);
     }
 
     // a bit more efficient
@@ -297,30 +297,30 @@ impl CardPossibilityTable {
     //     self.possible.keys().collect::<Vec<_>>()
     // }
 
-    pub fn decrement_weight_if_possible(&mut self, card: &Card) {
+    pub fn decrement_weight_if_possible(&mut self, card: Card) {
         if self.is_possible(card) {
             self.decrement_weight(card);
         }
     }
 
-    pub fn decrement_weight(&mut self, card: &Card) {
+    pub fn decrement_weight(&mut self, card: Card) {
         let remove = {
             let weight = self
                 .possible
-                .get_mut(card)
+                .get_mut(&card)
                 .unwrap_or_else(|| panic!("Decrementing weight for impossible card: {card}"));
             *weight -= 1;
             *weight == 0
         };
         if remove {
-            self.possible.remove(card);
+            self.possible.remove(&card);
         }
     }
 
     pub fn get_card(&self) -> Option<Card> {
         let possibilities = self.get_possibilities();
         if possibilities.len() == 1 {
-            Some(possibilities[0].clone())
+            Some(possibilities[0])
         } else {
             None
         }
@@ -366,7 +366,7 @@ impl<'a> From<&'a CardCounts> for CardPossibilityTable {
         for &color in COLORS.iter() {
             for &value in VALUES.iter() {
                 let card = Card::new(color, value);
-                let count = counts.remaining(&card);
+                let count = counts.remaining(card);
                 if count > 0 {
                     possible.insert(card, count);
                 }
@@ -380,8 +380,8 @@ impl CardInfo for CardPossibilityTable {
         Self::from(&CardCounts::new())
     }
 
-    fn is_possible(&self, card: &Card) -> bool {
-        self.possible.contains_key(card)
+    fn is_possible(&self, card: Card) -> bool {
+        self.possible.contains_key(&card)
     }
     fn get_possibilities(&self) -> Vec<Card> {
         let mut cards = self.possible.keys().cloned().collect::<Vec<_>>();
@@ -390,16 +390,16 @@ impl CardInfo for CardPossibilityTable {
     }
     fn mark_color_false(&mut self, color: Color) {
         for &value in VALUES.iter() {
-            self.mark_false(&Card::new(color, value));
+            self.mark_false(Card::new(color, value));
         }
     }
     fn mark_value_false(&mut self, value: Value) {
         for &color in COLORS.iter() {
-            self.mark_false(&Card::new(color, value));
+            self.mark_false(Card::new(color, value));
         }
     }
-    fn get_weight(&self, card: &Card) -> f32 {
-        *self.possible.get(card).unwrap_or(&0) as f32
+    fn get_weight(&self, card: Card) -> f32 {
+        *self.possible.get(&card).unwrap_or(&0) as f32
     }
 }
 impl fmt::Display for CardPossibilityTable {

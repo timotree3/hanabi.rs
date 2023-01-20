@@ -31,7 +31,7 @@ impl GameStrategyConfig for CheatingStrategyConfig {
 }
 
 pub struct CheatingStrategy {
-    player_hands_cheat: Rc<RefCell<FnvHashMap<Player, Cards>>>,
+    player_hands_cheat: Rc<RefCell<FnvHashMap<Player, Vec<Card>>>>,
 }
 
 impl CheatingStrategy {
@@ -42,11 +42,14 @@ impl CheatingStrategy {
     }
 }
 impl GameStrategy for CheatingStrategy {
-    fn initialize(&self, player: Player, view: &BorrowedGameView) -> Box<dyn PlayerStrategy> {
-        for (&player, &hand) in &view.other_hands {
-            self.player_hands_cheat
-                .borrow_mut()
-                .insert(player, hand.clone());
+    fn initialize<'game>(
+        &self,
+        player: Player,
+        view: &PlayerView<'game>,
+    ) -> Box<dyn PlayerStrategy<'game>> {
+        for player in view.other_players() {
+            let hand: Vec<Card> = view.hand(player).collect();
+            self.player_hands_cheat.borrow_mut().insert(player, hand);
         }
         Box::new(CheatingPlayerStrategy {
             player_hands_cheat: self.player_hands_cheat.clone(),
@@ -56,23 +59,23 @@ impl GameStrategy for CheatingStrategy {
 }
 
 pub struct CheatingPlayerStrategy {
-    player_hands_cheat: Rc<RefCell<FnvHashMap<Player, Cards>>>,
+    player_hands_cheat: Rc<RefCell<FnvHashMap<Player, Vec<Card>>>>,
     me: Player,
 }
 impl CheatingPlayerStrategy {
     // last player might've drawn a new card, let him know!
-    fn inform_last_player_cards(&self, view: &BorrowedGameView) {
+    fn inform_last_player_cards(&self, view: &PlayerView<'_>) {
         let next = view.board.player_to_right(self.me);
-        let their_hand = *view.other_hands.get(&next).unwrap();
+        let their_hand: Vec<Card> = view.hand(next).collect();
         self.player_hands_cheat
             .borrow_mut()
-            .insert(next, their_hand.clone());
+            .insert(next, their_hand);
     }
 
     // give a throwaway hint - we only do this when we have nothing to do
-    fn throwaway_hint(&self, view: &BorrowedGameView) -> TurnChoice {
+    fn throwaway_hint(&self, view: &PlayerView<'_>) -> TurnChoice {
         let hint_player = view.board.player_to_left(self.me);
-        let hint_card = &view.get_hand(hint_player).first().unwrap();
+        let hint_card = view.hand(hint_player).next().unwrap();
         TurnChoice::Hint(Hint {
             player: hint_player,
             hinted: Hinted::Value(hint_card.value),
@@ -80,7 +83,7 @@ impl CheatingPlayerStrategy {
     }
 
     // represents how badly a card needs to be played
-    fn card_play_value(&self, view: &BorrowedGameView, card: &Card) -> u32 {
+    fn card_play_value(&self, view: &PlayerView<'_>, card: Card) -> u32 {
         if view.board.is_dead(card) {
             return 0;
         }
@@ -92,14 +95,14 @@ impl CheatingPlayerStrategy {
     }
 
     // given a hand of cards, represents how badly it will need to play things
-    fn hand_play_value(&self, view: &BorrowedGameView, hand: &Cards) -> u32 {
+    fn hand_play_value(&self, view: &PlayerView<'_>, hand: &[Card]) -> u32 {
         hand.iter()
-            .map(|card| self.card_play_value(view, card))
+            .map(|&card| self.card_play_value(view, card))
             .sum()
     }
 
     // how badly do we need to play a particular card
-    fn get_play_score(&self, view: &BorrowedGameView, card: &Card) -> i32 {
+    fn get_play_score(&self, view: &PlayerView<'_>, card: Card) -> i32 {
         let hands = self.player_hands_cheat.borrow();
         let my_hand = hands.get(&self.me).unwrap();
 
@@ -119,33 +122,34 @@ impl CheatingPlayerStrategy {
         20 - (card.value as i32)
     }
 
-    fn find_useless_card(&self, view: &BorrowedGameView, hand: &Cards) -> Option<usize> {
+    fn find_useless_card(&self, view: &PlayerView<'_>, hand: &[Card]) -> Option<usize> {
         let mut set: FnvHashSet<Card> = FnvHashSet::default();
 
-        for (i, card) in hand.iter().enumerate() {
+        for (i, &card) in hand.iter().enumerate() {
             if view.board.is_dead(card) {
                 return Some(i);
             }
-            if set.contains(card) {
+            if set.contains(&card) {
                 // found a duplicate card
                 return Some(i);
             }
-            set.insert(card.clone());
+            set.insert(card);
         }
         None
     }
 }
-impl PlayerStrategy for CheatingPlayerStrategy {
+impl<'game> PlayerStrategy<'game> for CheatingPlayerStrategy {
     fn name(&self) -> String {
         String::from("cheat")
     }
-    fn decide(&mut self, view: &BorrowedGameView) -> TurnChoice {
+    fn decide(&mut self, view: &PlayerView<'_>) -> TurnChoice {
         self.inform_last_player_cards(view);
 
         let hands = self.player_hands_cheat.borrow();
         let my_hand = hands.get(&self.me).unwrap();
         let playable_cards = my_hand
             .iter()
+            .copied()
             .enumerate()
             .filter(|&(_, card)| view.board.is_playable(card))
             .collect::<Vec<_>>();
@@ -167,7 +171,7 @@ impl PlayerStrategy for CheatingPlayerStrategy {
         }
 
         // cannot discard while at max hint count
-        if view.board.hints_remaining == view.board.hints_total {
+        if view.board.hints_remaining == view.board.opts.num_hints {
             return self.throwaway_hint(view);
         }
 
@@ -175,9 +179,9 @@ impl PlayerStrategy for CheatingPlayerStrategy {
         // such that if we only played,
         // we would not reach the final countdown round
         // e.g. 50 total, 25 to play, 20 in hand
-        let discard_threshold = view.board.total_cards
+        let discard_threshold = TOTAL_CARDS
             - (COLORS.len() * VALUES.len()) as u32
-            - (view.board.num_players * view.board.hand_size);
+            - (view.board.opts.num_players * view.board.opts.hand_size);
         if view.board.discard_size() <= discard_threshold {
             // if anything is totally useless, discard it
             if let Some(i) = self.find_useless_card(view, my_hand) {
@@ -202,7 +206,7 @@ impl PlayerStrategy for CheatingPlayerStrategy {
         // The higher, the better to discard
         let mut index = 0;
         let mut compval = (false, false, 0);
-        for (i, card) in my_hand.iter().enumerate() {
+        for (i, &card) in my_hand.iter().enumerate() {
             let my_compval = (
                 view.can_see(card),
                 view.board.is_dispensable(card),
@@ -215,5 +219,5 @@ impl PlayerStrategy for CheatingPlayerStrategy {
         }
         TurnChoice::Discard(index)
     }
-    fn update(&mut self, _: &TurnRecord, _: &BorrowedGameView) {}
+    fn update(&mut self, _: &TurnRecord, _: &PlayerView<'_>) {}
 }

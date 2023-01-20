@@ -1,5 +1,5 @@
 use crate::{
-    game::{BoardState, BorrowedGameView, GameOptions, Player},
+    game::{BoardState, GameOptions, Player, PlayerView},
     strategy::{GameStrategy, GameStrategyConfig, PlayerStrategy},
 };
 
@@ -16,7 +16,11 @@ pub struct Strategy {
     opts: GameOptions,
 }
 impl GameStrategy for Strategy {
-    fn initialize(&self, _: Player, view: &BorrowedGameView) -> Box<dyn PlayerStrategy> {
+    fn initialize<'game>(
+        &self,
+        _: Player,
+        view: &PlayerView<'game>,
+    ) -> Box<dyn PlayerStrategy<'game>> {
         Box::new(RsPlayer {
             public: Public::first_turn(&view.board),
             opts: self.opts,
@@ -35,7 +39,7 @@ impl GameStrategy for Strategy {
 struct Public {}
 
 impl Public {
-    fn first_turn(board: &BoardState) -> Public {
+    fn first_turn(board: &BoardState<'_>) -> Public {
         Public {}
     }
 }
@@ -46,20 +50,16 @@ struct RsPlayer {
     opts: GameOptions,
 }
 
-impl PlayerStrategy for RsPlayer {
+impl<'game> PlayerStrategy<'game> for RsPlayer {
     fn name(&self) -> String {
         "rs".to_owned()
     }
 
-    fn decide(&mut self, view: &crate::game::BorrowedGameView) -> crate::game::TurnChoice {
+    fn decide(&mut self, view: &crate::game::PlayerView) -> crate::game::TurnChoice {
         todo!()
     }
 
-    fn update(
-        &mut self,
-        turn_record: &crate::game::TurnRecord,
-        view: &crate::game::BorrowedGameView,
-    ) {
+    fn update(&mut self, turn_record: &crate::game::TurnRecord, view: &crate::game::PlayerView) {
         todo!()
     }
 }

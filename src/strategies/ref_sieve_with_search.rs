@@ -66,7 +66,7 @@ enum CardLocation {
     Held { player: Player, slot: u32 },
 }
 
-fn hint_matches(hinted: &Hinted, card: &Card) -> bool {
+fn hint_matches(hinted: &Hinted, card: Card) -> bool {
     match hinted {
         Hinted::Color(color) => card.color == *color,
         Hinted::Value(value) => card.value == *value,
@@ -74,7 +74,7 @@ fn hint_matches(hinted: &Hinted, card: &Card) -> bool {
 }
 
 impl GlobalUnderstanding {
-    fn first_turn(board: &BoardState) -> Self {
+    fn first_turn(board: &BoardState<'_>) -> Self {
         let hands = board
             .get_players()
             .map(|player| {
@@ -504,7 +504,7 @@ fn consistent_deck(
     view: &BorrowedGameView,
     opts: &GameOptions,
 ) -> Vec<Card> {
-    fn card_to_index(card: &Card) -> usize {
+    fn card_to_index(card: Card) -> usize {
         let color_idx = COLORS.iter().position(|c| c == &card.color).unwrap();
         let value_idx = card.value - 1;
         (color_idx * VALUES.len()) + usize::try_from(value_idx).unwrap()

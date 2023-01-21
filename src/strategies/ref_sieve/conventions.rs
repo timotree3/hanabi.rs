@@ -357,6 +357,14 @@ pub(super) fn compare_conventional_alternatives(
         Ordering::Greater => return Ordering::Less,
     }
 
+    // If one move avoids a lock, it is better
+    match (a.is_lock(), b.is_lock()) {
+        (true, true) => {}
+        (true, false) => return Ordering::Less,
+        (false, true) => return Ordering::Greater,
+        (false, false) => {}
+    }
+
     // If one move avoids an intentional strike, it is better
     match (a.instructed_misplay(view), b.instructed_misplay(view)) {
         (None, None) => {}
@@ -537,6 +545,28 @@ impl ChoiceDesc {
             ChoiceCategory::ExpectedPlay
             | ChoiceCategory::ExpectedDiscard
             | ChoiceCategory::Hint(_) => 0.0,
+        }
+    }
+
+    fn is_lock(&self) -> bool {
+        match self.category {
+            ChoiceCategory::Hint(HintDesc {
+                new_known_plays: _,
+                new_known_trash: _,
+                category,
+            }) => match category {
+                HintCategory::Lock(_) => true,
+                HintCategory::RefPlay(_)
+                | HintCategory::RefDiscard(_)
+                | HintCategory::FillIn
+                | HintCategory::RankAction
+                | HintCategory::LockedHandStall
+                | HintCategory::EightClueStall
+                | HintCategory::LoadedRankStall => false,
+            },
+            ChoiceCategory::ExpectedPlay
+            | ChoiceCategory::ExpectedDiscard
+            | ChoiceCategory::Sacrifice(_) => false,
         }
     }
 }

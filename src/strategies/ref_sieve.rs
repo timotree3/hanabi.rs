@@ -209,13 +209,17 @@ fn compare_choice(
         ((Choice::Play(_), _), (Choice::Play(_), _)) => Ordering::Equal,
         ((Choice::Play(_), _), (_, _)) => Ordering::Greater,
         ((_, _), (Choice::Play(_), _)) => Ordering::Less,
+        ((Choice::Discard(_), _), (Choice::Discard(_), _)) => Ordering::Equal,
+        ((Choice::Discard(_), _), _) => Ordering::Greater,
+        (_, (Choice::Discard(_), _)) => Ordering::Less,
         (
             (Choice::Hint(_), ChoiceDesc::Hint(hint_a)),
             (Choice::Hint(_), ChoiceDesc::Hint(hint_b)),
         ) => hint_a.new_plays().cmp(&hint_b.new_plays()),
-        ((Choice::Hint(_), _), _) => Ordering::Greater,
-        (_, (Choice::Hint(_), _)) => Ordering::Less,
-        ((Choice::Discard(_), _), (Choice::Discard(_), _)) => Ordering::Equal,
+        ((Choice::Hint(_), ChoiceDesc::Action(_)), (Choice::Hint(_), _))
+        | ((Choice::Hint(_), _), (Choice::Hint(_), ChoiceDesc::Action(_))) => {
+            panic!("mismatching choice and choicedesc types")
+        }
     }
 }
 

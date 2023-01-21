@@ -11,7 +11,9 @@ use crate::{
     strategy::{GameStrategy, GameStrategyConfig, PlayerStrategy},
 };
 
-use self::conventions::{is_conventional, ChoiceCategory, ChoiceDesc, PublicKnowledge};
+use self::conventions::{
+    compare_conventional_alternatives, ChoiceCategory, ChoiceDesc, PublicKnowledge,
+};
 
 #[derive(Clone)]
 pub struct Config;
@@ -112,16 +114,20 @@ impl<'game> State<'game> {
     }
 }
 
+#[derive(Clone)]
 enum Choice {
     Play(CardId),
     Discard(CardId),
     Hint(Hint),
 }
+
+#[derive(Clone)]
 struct Hint {
     receiver: Player,
     hinted: Hinted,
     touched: Vec<CardId>,
 }
+
 impl Hint {
     fn choice(&self) -> HintChoice {
         HintChoice {
@@ -160,19 +166,37 @@ impl RsPlayer<'_> {
     /// Mutates self in place for efficiency but should leave it unchanged upon exiting.
 
     fn choose(&mut self, view: &PlayerView<'_>) -> Option<Choice> {
-        let backup_empathy = self.state.empathy.clone();
-        if let Some((choice, _)) = possible_choices(view)
-            .filter_map(|choice| {
-                self.describe_choice(&choice, &backup_empathy)
-                    .filter(|desc| is_conventional(&self.state, view, desc))
-                    .map(|desc| (choice, desc))
-            })
-            .max_by(|a, b| compare_choice(view, a, b))
-        {
-            Some(choice)
-        } else {
-            None
-        }
+        let conventional_alternatives = {
+            let backup_empathy = self.state.empathy.clone();
+            let mut interpretable_choices: Vec<(Choice, ChoiceDesc)> = possible_choices(view)
+                .filter_map(|choice| {
+                    self.describe_choice(&choice, &backup_empathy)
+                        .map(|desc| (choice, desc))
+                })
+                .collect();
+            let one_conventional_alternative = interpretable_choices
+                .iter()
+                .map(|(_, desc)| desc)
+                .max_by(|a, b| compare_conventional_alternatives(&self.state, view, a, b))?
+                .clone();
+            interpretable_choices.retain(|(_, desc)| {
+                compare_conventional_alternatives(
+                    &self.state,
+                    view,
+                    &one_conventional_alternative,
+                    desc,
+                ) == Ordering::Equal
+            });
+            interpretable_choices
+        };
+
+        Some(
+            conventional_alternatives
+                .into_iter()
+                .max_by(|a, b| compare_choice(view, a, b))
+                .unwrap()
+                .0,
+        )
     }
 }
 

@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use crate::{
     game::{CardId, Hinted, Player, PlayerView, TOTAL_CARDS},
     helpers::CardInfo,
@@ -293,45 +295,90 @@ impl PublicKnowledge {
     }
 }
 
-pub(super) fn is_conventional(state: &State, view: &PlayerView<'_>, desc: &ChoiceDesc) -> bool {
-    if let Some(chop) = desc.gave_ptd {
-        let card = view.card(chop);
-        // We don't give PTD to criticals or playables if we have a clue
-        // TODO: what if we have no choice? Does is_conventional need to be defined relative to alternatives?
-        if view.board.hints_remaining != 0
-            && (view.board.is_playable(card) || !view.board.is_dispensable(card))
-        {
-            return false;
+/// Returns Ordering::Equal unless one choice is conventionally required over the other
+pub(super) fn compare_conventional_alternatives(
+    state: &State,
+    view: &PlayerView<'_>,
+    a: &ChoiceDesc,
+    b: &ChoiceDesc,
+) -> Ordering {
+    if state.board.lives_remaining == state.board.opts.num_lives - 1 {
+        // If one move avoids striking out, it is better
+        match (a.instructed_misplay(view), b.instructed_misplay(view)) {
+            (Some(_), None) => return Ordering::Less,
+            (None, Some(_)) => return Ordering::Greater,
+            (None, None) | (Some(_), Some(_)) => {}
         }
     }
-    match &desc.category {
-        ChoiceCategory::Hint(HintDesc {
-            new_known_plays: _,
-            new_known_trash: _,
-            category,
-        }) => is_hint_conventional(view, *category),
-        ChoiceCategory::ExpectedPlay | ChoiceCategory::ExpectedDiscard => true,
-        ChoiceCategory::Sacrifice(card_id) => {
-            // TODO: uncertain sacrifices
-            // TODO: private empathy (e.g. using deductions from seen criticals in partner's hand)
-            state.empathy[*card_id as usize].probability_is_dispensable(&state.board) == 1.0
-        }
-    }
-}
 
-fn is_hint_conventional(view: &PlayerView<'_>, hint_category: HintCategory) -> bool {
-    match hint_category {
-        HintCategory::RefPlay(target) => view.board.is_playable(view.card(target)),
-        // The RefDiscard gives PTD but thatis handled elsewhere
-        HintCategory::RefDiscard(_) => true,
-        HintCategory::FillIn | HintCategory::RankAction => true,
-        // TODO: a lock should be unconventional if there are cluable safe actions
-        HintCategory::Lock(_) => true,
-        // TODO: stalling should be unconventional if there are cluable safe actions
-        HintCategory::EightClueStall
-        | HintCategory::LockedHandStall
-        | HintCategory::LoadedRankStall => true,
+    // If one move results in a less severe discard, it is better.
+    // Note that None < Some(_)
+    match a.discard_severity(view).cmp(&b.discard_severity(view)) {
+        Ordering::Less => return Ordering::Greater,
+        Ordering::Equal => {}
+        Ordering::Greater => return Ordering::Less,
+        // TODO: Is accepting a higher severity discard okay sometimes?
+        // Possible future configuration:
+        // - Giving ptd to a critical is never a logical alternative
+        // - Giving ptd to a 2 is a logical alternative when
+        //   - The clue count is "low enough" and the alternatives lock or discard a one-away 3
+        // - Giving ptd to an immediately playable is a logical alternative when
+        //   - The mainline discards a critical? (probably due to zcsp)
+        //   - What about at 2 clues if you're scared of drawing all criticals?
+        // - Giving ptd to a 3 is a logical alternative when
+        //   - There is a safe action but the clue count is "low enough" not to sieve it in
+        //     - Apply sodiumdebt+hallmark's criteria of "am I sieving in the card which will be the best discard?"
+        //       (or even 2nd best discard)
+        //   - The alternative is locking and the clue count is "low enough" (other metric? score?)
+        //   - The alternative is discarding another useful card
+
+        // TODO: How do we take into account the danger of sacrificing?
     }
+
+    // If one sacrifice is less likely to be critical, it is better
+    match a
+        .risk_of_critical_sacrifice(state)
+        .partial_cmp(&b.risk_of_critical_sacrifice(state))
+        .unwrap()
+    {
+        Ordering::Less => return Ordering::Greater,
+        Ordering::Equal => {}
+        Ordering::Greater => return Ordering::Less,
+    }
+
+    // If one move avoids an intentional strike, it is better
+    match (a.instructed_misplay(view), b.instructed_misplay(view)) {
+        (None, None) => {}
+        (None, Some(_)) => return Ordering::Greater,
+        (Some(_), None) => return Ordering::Less,
+        (Some(_), Some(_)) => {}
+    }
+
+    Ordering::Equal
+
+    // TODO: a lock should be unconventional if there are cluable safe actions
+    // TODO: stalling should be unconventional if there are cluable safe actions
+
+    // TODO:
+    // Ref play clues on unplayables
+    // - Forcing a bomb of trash is a logical alternative when
+    //   - the clue count is high enough and the alternative is discarding a useful card / locking
+    // - Forcing a bomb of a useful card is a logical alternative... never?
+    //   - Maybe if the alternative is discarding a critical because there is no possible lock clue
+    // - Forcing a bomb of a critical card is a logical alternative... never?
+    //
+    // - Sacrificing a card is a logical alternative when
+    //   - idk...
+    //
+    // Giving a ref discard instead of a ref play
+    // - When giving elim for a playable?
+    // - When it's a good line? (always logical alternative?)
+    // - Not when the clue count is very high (e.g. 7)?
+    //
+    // Giving a ref play instead of a clue which gets multiple safe actions
+    // - When the line is good?
+    // - What about first turn "always clue 1s" policies?
+    // - When the mainline bad touches?
 }
 
 #[derive(Debug, Copy, Clone, Default)]
@@ -360,11 +407,13 @@ impl Note {
     }
 }
 
+#[derive(Clone)]
 pub struct ChoiceDesc {
     pub gave_ptd: Option<CardId>,
     pub category: ChoiceCategory,
 }
 
+#[derive(Clone)]
 pub enum ChoiceCategory {
     /// A play that was publicy known to be safe (instructed/good touch)
     ExpectedPlay,
@@ -374,7 +423,7 @@ pub enum ChoiceCategory {
     Hint(HintDesc),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HintDesc {
     new_known_plays: Vec<CardId>,
     new_known_trash: Vec<CardId>,
@@ -397,6 +446,59 @@ enum HintCategory {
     Lock(Player),
 }
 
+impl ChoiceDesc {
+    fn discard_severity(&self, view: &PlayerView<'_>) -> Option<DiscardSeverity> {
+        match (self.gave_ptd, self.instructed_misplay(view)) {
+            (None, None) => None,
+            (None, Some(card_id)) | (Some(card_id), None) => Some(discard_severity(view, card_id)),
+            (Some(_), Some(_)) => {
+                panic!("how did move cause misplay and give ptd at the same time?")
+            }
+        }
+    }
+
+    fn instructed_misplay(&self, view: &PlayerView<'_>) -> Option<CardId> {
+        match self.category {
+            ChoiceCategory::Hint(HintDesc {
+                new_known_plays: _,
+                new_known_trash: _,
+                category,
+            }) => match category {
+                HintCategory::RefPlay(target) => {
+                    let card = view.card(target);
+                    if !view.board.is_playable(card) {
+                        Some(target)
+                    } else {
+                        None
+                    }
+                }
+                HintCategory::RefDiscard(_)
+                | HintCategory::FillIn
+                | HintCategory::RankAction
+                | HintCategory::LockedHandStall
+                | HintCategory::EightClueStall
+                | HintCategory::LoadedRankStall
+                | HintCategory::Lock(_) => None,
+            },
+            ChoiceCategory::ExpectedPlay
+            | ChoiceCategory::ExpectedDiscard
+            | ChoiceCategory::Sacrifice(_) => None,
+        }
+    }
+
+    fn risk_of_critical_sacrifice(&self, state: &State) -> f32 {
+        match self.category {
+            ChoiceCategory::Sacrifice(card_id) => {
+                // TODO: private empathy (e.g. using deductions from seen criticals in partner's hand)
+                1.0 - state.empathy[card_id as usize].probability_is_dispensable(&state.board)
+            }
+            ChoiceCategory::ExpectedPlay
+            | ChoiceCategory::ExpectedDiscard
+            | ChoiceCategory::Hint(_) => 0.0,
+        }
+    }
+}
+
 impl HintCategory {
     fn new_plays(&self) -> usize {
         match self {
@@ -416,4 +518,38 @@ impl HintDesc {
     pub fn new_plays(&self) -> usize {
         self.new_known_plays.len() + self.category.new_plays()
     }
+}
+// Lowest to highest severity
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+enum DiscardSeverity {
+    Safe,
+    Two,
+    Playable,
+    Critical,
+}
+
+fn discard_severity(view: &PlayerView<'_>, card_id: CardId) -> DiscardSeverity {
+    let card = view.card(card_id);
+    if !view.board.is_dispensable(card) {
+        DiscardSeverity::Critical
+    } else if view.board.is_dead(card) || is_duplicate(view, card_id) {
+        DiscardSeverity::Safe
+    } else if view.board.is_playable(card) {
+        DiscardSeverity::Playable
+    } else if card.value == 2 {
+        DiscardSeverity::Two
+    } else {
+        DiscardSeverity::Safe
+    }
+}
+
+fn is_duplicate(view: &PlayerView<'_>, card_id: CardId) -> bool {
+    let card = view.card(card_id);
+    view.other_players().any(|player| {
+        view.hand(player)
+            .pairs()
+            .any(|(visible_card_id, visible_card)| {
+                visible_card_id != card_id && visible_card == card
+            })
+    })
 }

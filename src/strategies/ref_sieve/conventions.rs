@@ -489,10 +489,10 @@ enum HintCategory {
 }
 
 impl ChoiceDesc {
-    fn discard_severity(&self, view: &PlayerView<'_>) -> Option<DiscardSeverity> {
+    fn discard_severity(&self, view: &PlayerView<'_>) -> DiscardSeverity {
         match (self.gave_ptd, self.instructed_misplay(view)) {
-            (None, None) => None,
-            (None, Some(card_id)) | (Some(card_id), None) => Some(discard_severity(view, card_id)),
+            (None, None) => DiscardSeverity::Safe,
+            (None, Some(card_id)) | (Some(card_id), None) => discard_severity(view, card_id),
             (Some(_), Some(_)) => {
                 panic!("how did move cause misplay and give ptd at the same time?")
             }

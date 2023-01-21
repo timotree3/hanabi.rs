@@ -183,9 +183,10 @@ impl RsPlayer<'_> {
                 compare_conventional_alternatives(
                     &self.state,
                     view,
-                    &one_conventional_alternative,
                     desc,
-                ) == Ordering::Equal
+                    &one_conventional_alternative,
+                )
+                .is_ge()
             });
             interpretable_choices
         };

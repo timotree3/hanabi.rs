@@ -18,31 +18,25 @@ impl PublicKnowledge {
 
     pub fn describe_choice(&self, state: &State, choice: &Choice) -> Option<ChoiceDesc> {
         match choice {
-            Choice::Play(card_id) => self.describe_play(state, *card_id).map(ChoiceDesc::Action),
-            Choice::Discard(card_id) => self
-                .describe_discard(state, *card_id)
-                .map(ChoiceDesc::Action),
-            Choice::Hint(hint) => self.describe_hint(state, hint).map(ChoiceDesc::Hint),
+            Choice::Play(card_id) => self.describe_play(state, *card_id),
+            Choice::Discard(card_id) => self.describe_discard(state, *card_id),
+            Choice::Hint(hint) => self.describe_hint(state, hint),
         }
     }
 
     pub fn interpret_choice(&mut self, state: &State, choice: &Choice) {
-        let desc = self
+        let ChoiceDesc { gave_ptd, category } = self
             .describe_choice(state, choice)
             .expect("action taken should be conventional");
+        if let Some(chop) = gave_ptd {
+            self.note_mut(chop).ptd = true;
+        }
+        match category {
+            ChoiceCategory::ExpectedPlay
+            | ChoiceCategory::ExpectedDiscard
+            | ChoiceCategory::Sacrifice(_) => {}
 
-        match desc {
-            ChoiceDesc::Action(ActionDesc { gave_ptd, category }) => {
-                if let Some(chop) = gave_ptd {
-                    self.note_mut(chop).ptd = true;
-                }
-                match category {
-                    ActionCategory::ExpectedPlay
-                    | ActionCategory::ExpectedDiscard
-                    | ActionCategory::Sacrifice(_) => {}
-                }
-            }
-            ChoiceDesc::Hint(HintDesc {
+            ChoiceCategory::Hint(HintDesc {
                 new_known_plays,
                 new_known_trash,
                 category,
@@ -59,18 +53,18 @@ impl PublicKnowledge {
                     HintCategory::RefPlay(target) => {
                         self.note_mut(target).play = true;
                     }
-                    HintCategory::RefDiscard(target) => {
-                        self.note_mut(target).ptd = true;
+                    HintCategory::RefDiscard(_) => {
+                        // The target already has been given PTD due to the `gave_ptd` field
                     }
                     HintCategory::Lock(player) => {
                         let newest = *state.hands[player].last().unwrap();
                         self.note_mut(newest).lock = true;
                     }
-                    // TODO: stalls should give PTD
                     HintCategory::EightClueStall
                     | HintCategory::FillIn
                     | HintCategory::RankAction
                     | HintCategory::LockedHandStall => {}
+                    HintCategory::LoadedRankStall => {}
                 }
             }
         }
@@ -106,36 +100,36 @@ impl PublicKnowledge {
         self.note(card_id).unclued()
     }
 
-    fn describe_play(&self, state: &State, card_id: CardId) -> Option<ActionDesc> {
+    fn describe_play(&self, state: &State, card_id: CardId) -> Option<ChoiceDesc> {
         if !self.note(card_id).playable() {
             return None;
         }
         // If the next player is not loaded, give them PTD
         let next_player = state.board.player_to_right(state.board.player);
         // TODO: What if this play was known to give them an action
-        Some(ActionDesc {
+        Some(ChoiceDesc {
             gave_ptd: self.chop_if_unloaded(state, next_player),
-            category: ActionCategory::ExpectedPlay,
+            category: ChoiceCategory::ExpectedPlay,
         })
     }
 
-    fn describe_discard(&self, state: &State, card_id: CardId) -> Option<ActionDesc> {
+    fn describe_discard(&self, state: &State, card_id: CardId) -> Option<ChoiceDesc> {
         let category = if self.is_locked(state, state.board.player) {
-            ActionCategory::Sacrifice(card_id)
+            ChoiceCategory::Sacrifice(card_id)
         } else if self.note(card_id).trash || self.note(card_id).ptd {
-            ActionCategory::ExpectedDiscard
+            ChoiceCategory::ExpectedDiscard
         } else {
             return None;
         };
         // If the next player is not loaded, give them PTD
         let next_player = state.board.player_to_right(state.board.player);
-        Some(ActionDesc {
+        Some(ChoiceDesc {
             gave_ptd: self.chop_if_unloaded(state, next_player),
             category,
         })
     }
 
-    fn describe_hint(&self, state: &State, hint: &Hint) -> Option<HintDesc> {
+    fn describe_hint(&self, state: &State, hint: &Hint) -> Option<ChoiceDesc> {
         let new_known_plays: Vec<CardId> = state.hands[hint.receiver]
             .iter()
             .copied()
@@ -149,10 +143,23 @@ impl PublicKnowledge {
             .collect();
 
         self.categorize_hint(state, hint, &new_known_plays, &new_known_trash)
-            .map(|category| HintDesc {
-                new_known_plays,
-                new_known_trash,
-                category,
+            .map(|category| ChoiceDesc {
+                gave_ptd: match category {
+                    HintCategory::RefDiscard(target) => Some(target),
+                    HintCategory::LockedHandStall | HintCategory::EightClueStall => {
+                        Some(*state.hands[hint.receiver].last().unwrap())
+                    }
+                    HintCategory::RefPlay(_)
+                    | HintCategory::FillIn
+                    | HintCategory::RankAction
+                    | HintCategory::Lock(_)
+                    | HintCategory::LoadedRankStall => None,
+                },
+                category: ChoiceCategory::Hint(HintDesc {
+                    new_known_plays,
+                    new_known_trash,
+                    category,
+                }),
             })
     }
 
@@ -186,7 +193,6 @@ impl PublicKnowledge {
                 return Some(HintCategory::RankAction);
             }
 
-            // TODO: rank clues when there's already PTD
             if let Some(chop) = self.chop_if_unloaded(state, hint.receiver) {
                 if let Some(target) = self.rank_clue_target(state, hint.receiver, &hint.touched) {
                     // check if target = chop. if so, it's a lock/8 clue stall
@@ -194,7 +200,6 @@ impl PublicKnowledge {
                         return if hint.touched.contains(&chop) {
                             Some(HintCategory::Lock(hint.receiver))
                         } else if state.board.hints_remaining == state.board.opts.num_hints {
-                            // TODO: 8cs actually should give ptd
                             Some(HintCategory::EightClueStall)
                         } else if self.is_locked(state, state.board.player) {
                             Some(HintCategory::LockedHandStall)
@@ -206,16 +211,15 @@ impl PublicKnowledge {
                     }
                 }
             } else if state.board.hints_remaining == state.board.opts.num_hints {
-                return Some(HintCategory::EightClueStall);
+                return Some(HintCategory::LoadedRankStall);
             } else if self.is_locked(state, state.board.player) {
+                // TODO: implementt color stalls and unlock promise
                 return Some(HintCategory::LockedHandStall);
             } else {
                 // TODO: LPC
                 return None;
             }
         }
-
-        // TODO: loaded stalls
 
         None
     }
@@ -290,48 +294,43 @@ impl PublicKnowledge {
 }
 
 pub(super) fn is_conventional(state: &State, view: &PlayerView<'_>, desc: &ChoiceDesc) -> bool {
-    match desc {
-        ChoiceDesc::Action(ActionDesc { gave_ptd, category }) => {
-            if let Some(chop) = gave_ptd {
-                let card = view.card(*chop);
-                // We don't give PTD to criticals or playables if we have a clue
-                // TODO: what if we have no choice? Does is_conventional need to be defined relative to alternatives?
-                if view.board.hints_remaining != 0
-                    && (view.board.is_playable(card) || !view.board.is_dispensable(card))
-                {
-                    return false;
-                }
-            }
-            match category {
-                ActionCategory::Sacrifice(card_id) => {
-                    // TODO: uncertain sacrifices
-                    // TODO: private empathy (e.g. using deductions from seen criticals in partner's hand)
-                    state.empathy[*card_id as usize].probability_is_dispensable(&state.board) == 1.0
-                }
-                ActionCategory::ExpectedPlay | ActionCategory::ExpectedDiscard => true,
-            }
+    if let Some(chop) = desc.gave_ptd {
+        let card = view.card(chop);
+        // We don't give PTD to criticals or playables if we have a clue
+        // TODO: what if we have no choice? Does is_conventional need to be defined relative to alternatives?
+        if view.board.hints_remaining != 0
+            && (view.board.is_playable(card) || !view.board.is_dispensable(card))
+        {
+            return false;
         }
-        ChoiceDesc::Hint(HintDesc {
+    }
+    match &desc.category {
+        ChoiceCategory::Hint(HintDesc {
             new_known_plays: _,
             new_known_trash: _,
             category,
         }) => is_hint_conventional(view, *category),
+        ChoiceCategory::ExpectedPlay | ChoiceCategory::ExpectedDiscard => true,
+        ChoiceCategory::Sacrifice(card_id) => {
+            // TODO: uncertain sacrifices
+            // TODO: private empathy (e.g. using deductions from seen criticals in partner's hand)
+            state.empathy[*card_id as usize].probability_is_dispensable(&state.board) == 1.0
+        }
     }
 }
 
 fn is_hint_conventional(view: &PlayerView<'_>, hint_category: HintCategory) -> bool {
     match hint_category {
         HintCategory::RefPlay(target) => view.board.is_playable(view.card(target)),
-        HintCategory::RefDiscard(target) => {
-            // We don't give PTD to criticals or playables if we have a clue
-            let card = view.card(target);
-            !view.board.is_playable(card) && view.board.is_dispensable(card)
-        }
+        // The RefDiscard gives PTD but thatis handled elsewhere
+        HintCategory::RefDiscard(_) => true,
         HintCategory::FillIn | HintCategory::RankAction => true,
         // TODO: a lock should be unconventional if there are cluable safe actions
         HintCategory::Lock(_) => true,
         // TODO: stalling should be unconventional if there are cluable safe actions
-        HintCategory::EightClueStall | HintCategory::LockedHandStall => true,
+        HintCategory::EightClueStall
+        | HintCategory::LockedHandStall
+        | HintCategory::LoadedRankStall => true,
     }
 }
 
@@ -361,23 +360,18 @@ impl Note {
     }
 }
 
-pub enum ChoiceDesc {
-    /// A play or a discard
-    Action(ActionDesc),
-    Hint(HintDesc),
+pub struct ChoiceDesc {
+    pub gave_ptd: Option<CardId>,
+    pub category: ChoiceCategory,
 }
 
-pub struct ActionDesc {
-    gave_ptd: Option<CardId>,
-    category: ActionCategory,
-}
-
-enum ActionCategory {
+pub enum ChoiceCategory {
     /// A play that was publicy known to be safe (instructed/good touch)
     ExpectedPlay,
     /// A discard that was publicy known to be safe (trash/ptd)
     ExpectedDiscard,
     Sacrifice(CardId),
+    Hint(HintDesc),
 }
 
 #[derive(Debug)]
@@ -397,6 +391,9 @@ enum HintCategory {
     RankAction,
     LockedHandStall,
     EightClueStall,
+    /// In a stalling situation, a rank clue to a loaded player means nothing extra and does not give PTD
+    /// (Exception: locked hand stalls in 2p)
+    LoadedRankStall,
     Lock(Player),
 }
 
@@ -409,7 +406,8 @@ impl HintCategory {
             | HintCategory::EightClueStall
             | HintCategory::RankAction
             | HintCategory::Lock(_)
-            | HintCategory::LockedHandStall => 0,
+            | HintCategory::LockedHandStall
+            | HintCategory::LoadedRankStall => 0,
         }
     }
 }

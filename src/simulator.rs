@@ -4,7 +4,7 @@ use rand::RngCore;
 use rand::{self, SeedableRng};
 use rand_chacha::ChaChaRng;
 use std::fmt;
-use tracing::{debug, info};
+use tracing::{debug, info, error};
 
 use crate::game::*;
 use crate::helpers::PerPlayer;
@@ -73,7 +73,10 @@ pub fn simulate_once(
             });
         }
 
-        let Some(choice) = choice else { break };
+        let Some(choice) = choice else { 
+            error!("No conventional action in seed {}", seed);
+            break
+        };
 
         let turn = game.process_choice(choice);
 

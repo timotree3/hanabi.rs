@@ -11,7 +11,7 @@ use crate::{
     strategy::{GameStrategy, GameStrategyConfig, PlayerStrategy},
 };
 
-use self::conventions::{is_conventional, ChoiceDesc, PublicKnowledge};
+use self::conventions::{is_conventional, ChoiceCategory, ChoiceDesc, PublicKnowledge};
 
 #[derive(Clone)]
 pub struct Config;
@@ -216,11 +216,22 @@ fn compare_choice(
         ((Choice::Discard(_), _), _) => Ordering::Greater,
         (_, (Choice::Discard(_), _)) => Ordering::Less,
         (
-            (Choice::Hint(_), ChoiceDesc::Hint(hint_a)),
-            (Choice::Hint(_), ChoiceDesc::Hint(hint_b)),
+            (
+                Choice::Hint(_),
+                ChoiceDesc {
+                    category: ChoiceCategory::Hint(hint_a),
+                    ..
+                },
+            ),
+            (
+                Choice::Hint(_),
+                ChoiceDesc {
+                    category: ChoiceCategory::Hint(hint_b),
+                    ..
+                },
+            ),
         ) => hint_a.new_plays().cmp(&hint_b.new_plays()),
-        ((Choice::Hint(_), ChoiceDesc::Action(_)), (Choice::Hint(_), _))
-        | ((Choice::Hint(_), _), (Choice::Hint(_), ChoiceDesc::Action(_))) => {
+        ((Choice::Hint(_), _), (Choice::Hint(_), _)) => {
             panic!("mismatching choice and choicedesc types")
         }
     }

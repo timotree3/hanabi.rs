@@ -44,3 +44,11 @@ struct PlayQueued {
 }
 
 ```
+
+How do we deal with plays that are stacked on top of plays in giver's hand?
+Simple options:
+- Never do it
+- Superposition includes duplicate of first card in each suit played from giver's hand,
+  as well as cards on top of each card played from giver's hand at time of clue before the card had permission to play
+Complicated option: Pay attention to which plays are publicly known are for the non-public ones, consider what it would take from the hand to make them known
+  - For each card, keep track of its useful-unplayable identities

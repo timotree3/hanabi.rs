@@ -305,7 +305,7 @@ impl<'game> BoardState<'game> {
 
     // best possible value we can get for firework of that color,
     // based on looking at discard + fireworks
-    fn highest_attainable(&self, color: Color) -> Value {
+    pub fn highest_attainable(&self, color: Color) -> Value {
         let firework = self.fireworks.get(&color).unwrap();
         if firework.complete() {
             return FINAL_VALUE;

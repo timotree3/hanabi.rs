@@ -1,10 +1,7 @@
-use std::{
-    cmp::Ordering,
-    fmt::{Display, Write},
-};
+use std::{cmp::Ordering, fmt::Display};
 
 use crate::{
-    game::{CardId, Hinted, Player, PlayerView, TOTAL_CARDS},
+    game::{Card, CardId, Hinted, Player, PlayerView, TOTAL_CARDS},
     helpers::CardInfo,
 };
 
@@ -37,7 +34,7 @@ impl PublicKnowledge {
             self.note_mut(chop).ptd = true;
         }
         match category {
-            ChoiceCategory::ExpectedPlay
+            ChoiceCategory::ExpectedPlay(_)
             | ChoiceCategory::ExpectedDiscard
             | ChoiceCategory::Sacrifice(_) => {}
 
@@ -110,7 +107,7 @@ impl PublicKnowledge {
     }
 
     fn describe_play(&self, state: &State, card_id: CardId) -> Option<ChoiceDesc> {
-        if !self.note(card_id).playable() {
+        if !self.note(card_id).is_playable() {
             return None;
         }
         // If the next player is not loaded, give them PTD
@@ -118,7 +115,7 @@ impl PublicKnowledge {
         // TODO: What if this play was known to give them an action
         Some(ChoiceDesc {
             gave_ptd: self.chop_if_unloaded(state, next_player),
-            category: ChoiceCategory::ExpectedPlay,
+            category: ChoiceCategory::ExpectedPlay(card_id),
         })
     }
 
@@ -304,111 +301,177 @@ impl PublicKnowledge {
     pub fn notes(&self) -> Vec<String> {
         self.notes.iter().map(Note::to_string).collect()
     }
-}
+    /// Returns Ordering::Equal unless one choice is conventionally required over the other
+    pub fn compare_conventional_alternatives(
+        &self,
+        state: &State,
+        view: &PlayerView<'_>,
+        a: &ChoiceDesc,
+        b: &ChoiceDesc,
+    ) -> Ordering {
+        if state.board.lives_remaining == state.board.opts.num_lives - 1 {
+            // If one move avoids striking out, it is better
+            match (a.instructed_misplay(view), b.instructed_misplay(view)) {
+                (None, Some(_)) => return Ordering::Greater,
+                (Some(_), None) => return Ordering::Less,
+                (None, None) | (Some(_), Some(_)) => {}
+            }
+        }
 
-/// Returns Ordering::Equal unless one choice is conventionally required over the other
-pub(super) fn compare_conventional_alternatives(
-    state: &State,
-    view: &PlayerView<'_>,
-    a: &ChoiceDesc,
-    b: &ChoiceDesc,
-) -> Ordering {
-    if state.board.lives_remaining == state.board.opts.num_lives - 1 {
-        // If one move avoids striking out, it is better
+        // If one move results in a less severe discard, it is better.
+        // Note that None < Some(_)
+        match a.discard_severity(view).cmp(&b.discard_severity(view)) {
+            Ordering::Less => return Ordering::Greater,
+            Ordering::Equal => {}
+            Ordering::Greater => return Ordering::Less,
+            // TODO: Is accepting a higher severity discard okay sometimes?
+            // Possible future configuration:
+            // - Giving ptd to a critical is never a logical alternative
+            // - Giving ptd to a 2 is a logical alternative when
+            //   - The clue count is "low enough" and the alternatives lock or discard a one-away 3
+            // - Giving ptd to an immediately playable is a logical alternative when
+            //   - The mainline discards a critical? (probably due to zcsp)
+            //   - What about at 2 clues if you're scared of drawing all criticals?
+            // - Giving ptd to a 3 is a logical alternative when
+            //   - There is a safe action but the clue count is "low enough" not to sieve it in
+            //     - Apply sodiumdebt+hallmark's criteria of "am I sieving in the card which will be the best discard?"
+            //       (or even 2nd best discard)
+            //   - The alternative is locking and the clue count is "low enough" (other metric? score?)
+            //   - The alternative is discarding another useful card
+
+            // TODO: How do we take into account the danger of sacrificing?
+        }
+
+        // If one sacrifice is less likely to be critical, it is better
+        match a
+            .risk_of_critical_sacrifice(state)
+            .partial_cmp(&b.risk_of_critical_sacrifice(state))
+            .unwrap()
+        {
+            Ordering::Less => return Ordering::Greater,
+            Ordering::Equal => {}
+            Ordering::Greater => return Ordering::Less,
+        }
+
+        // If one move avoids a lock, it is better
+        match (a.is_lock(), b.is_lock()) {
+            (false, true) => return Ordering::Greater,
+            (true, false) => return Ordering::Less,
+            (true, true) | (false, false) => {}
+        }
+
+        // If one move avoids an intentional strike, it is better
         match (a.instructed_misplay(view), b.instructed_misplay(view)) {
-            (Some(_), None) => return Ordering::Less,
             (None, Some(_)) => return Ordering::Greater,
+            (Some(_), None) => return Ordering::Less,
             (None, None) | (Some(_), Some(_)) => {}
         }
+
+        // Avoid discarding to 8 clues when you could give a new play
+        if view.board.hints_remaining == view.board.opts.num_hints - 1 {
+            match (a.is_discard(), a.new_plays(), b.is_discard(), b.new_plays()) {
+                (true, 0, _, 1..) => return Ordering::Less,
+                (_, 1.., true, 0) => return Ordering::Greater,
+                _ => {}
+            }
+        }
+
+        if view.board.pace() < view.board.opts.num_players {
+            // Give a play to a player who doesn't play about any
+            if !self.is_stacked(state, view.board.player_to_right(view.board.player)) {
+                match (a.new_plays(), (b.new_plays())) {
+                    (1.., 0) => return Ordering::Greater,
+                    (0, 1..) => return Ordering::Less,
+                    (0, 0) | (1.., 1..) => {}
+                }
+            }
+
+            if view.board.pace() == 1 {
+                // Prefer playing urgent cards at low pace (see definition of urgent below)
+                match (
+                    a.is_playing_urgent_card(self, state),
+                    b.is_playing_urgent_card(self, state),
+                ) {
+                    (true, false) => return Ordering::Greater,
+                    (false, true) => return Ordering::Less,
+                    (true, true) | (false, false) => {}
+                }
+
+                // Prefer discarding to playing non-urgent cards when partner already has plays
+                if a.is_discard() && b.is_play() {
+                    return Ordering::Greater;
+                }
+                if b.is_discard() && a.is_play() {
+                    return Ordering::Less;
+                }
+
+                // Prefer cluing to discarding if ... TODO
+            }
+        }
+
+        // At pace 1, discard instead of playing if
+        // - My play might not be a 5 AND
+        // - I can save my play for the final round (it's a 3 and partner doesn't have the 5 or it's a 4) AND
+        // - My partner has at least two plays
+        // TODO
+
+        // At pace 1, clue instead of discarding if
+        // - I might not have any useful 4s or 5s and my partner has a play and there are enough clues to stall
+        // - My partner's hand is empty and there will be enough clues to stall if they draw a good card
+        // - TODO: drawing a 3 into the same hand as its 5
+        //
+        // Enough clues to stall: clue count > (# non-5s to be played in partner's hand)
+
+        Ordering::Equal
+
+        // TODO: should stalling should be unconventional if there are cluable safe actions?
+
+        // TODO:
+        // Ref play clues on unplayables
+        // - Forcing a bomb of trash is a logical alternative when
+        //   - the clue count is high enough and the alternative is discarding a useful card / locking
+        // - Forcing a bomb of a useful card is a logical alternative... never?
+        //   - Maybe if the alternative is discarding a critical because there is no possible lock clue
+        // - Forcing a bomb of a critical card is a logical alternative... never?
+        //
+        // - Sacrificing a card is a logical alternative when
+        //   - idk...
+        //
+        // Giving a ref discard instead of a ref play
+        // - When giving elim for a playable?
+        // - When it's a good line? (always logical alternative?)
+        // - Not when the clue count is very high (e.g. 7)?
+        //
+        // Giving a ref play instead of a clue which gets multiple safe actions
+        // - When the line is good?
+        // - What about first turn "always clue 1s" policies?
+        // - When the mainline bad touches?
     }
 
-    // If one move results in a less severe discard, it is better.
-    // Note that None < Some(_)
-    match a.discard_severity(view).cmp(&b.discard_severity(view)) {
-        Ordering::Less => return Ordering::Greater,
-        Ordering::Equal => {}
-        Ordering::Greater => return Ordering::Less,
-        // TODO: Is accepting a higher severity discard okay sometimes?
-        // Possible future configuration:
-        // - Giving ptd to a critical is never a logical alternative
-        // - Giving ptd to a 2 is a logical alternative when
-        //   - The clue count is "low enough" and the alternatives lock or discard a one-away 3
-        // - Giving ptd to an immediately playable is a logical alternative when
-        //   - The mainline discards a critical? (probably due to zcsp)
-        //   - What about at 2 clues if you're scared of drawing all criticals?
-        // - Giving ptd to a 3 is a logical alternative when
-        //   - There is a safe action but the clue count is "low enough" not to sieve it in
-        //     - Apply sodiumdebt+hallmark's criteria of "am I sieving in the card which will be the best discard?"
-        //       (or even 2nd best discard)
-        //   - The alternative is locking and the clue count is "low enough" (other metric? score?)
-        //   - The alternative is discarding another useful card
-
-        // TODO: How do we take into account the danger of sacrificing?
+    /// Returns true if `player` knows about a play
+    fn is_stacked(&self, state: &State, player: Player) -> bool {
+        state.hands[player]
+            .iter()
+            .any(|&card_id| self.note(card_id).is_playable())
     }
 
-    // If one sacrifice is less likely to be critical, it is better
-    match a
-        .risk_of_critical_sacrifice(state)
-        .partial_cmp(&b.risk_of_critical_sacrifice(state))
-        .unwrap()
-    {
-        Ordering::Less => return Ordering::Greater,
-        Ordering::Equal => {}
-        Ordering::Greater => return Ordering::Less,
-    }
-
-    // If one move avoids a lock, it is better
-    match (a.is_lock(), b.is_lock()) {
-        (true, true) => {}
-        (true, false) => return Ordering::Less,
-        (false, true) => return Ordering::Greater,
-        (false, false) => {}
-    }
-
-    // If one move avoids an intentional strike, it is better
-    match (a.instructed_misplay(view), b.instructed_misplay(view)) {
-        (None, None) => {}
-        (None, Some(_)) => return Ordering::Greater,
-        (Some(_), None) => return Ordering::Less,
-        (Some(_), Some(_)) => {}
-    }
-
-    // Avoid discarding to 8 clues or at pace < players when you could give a new play
-    if view.board.hints_remaining == view.board.opts.num_hints - 1
-        || view.board.pace() < view.board.opts.num_players
-    {
-        match (a.is_discard(), a.new_plays(), b.is_discard(), b.new_plays()) {
-            (true, 0, _, 1..) => return Ordering::Less,
-            (_, 1.., true, 0) => return Ordering::Greater,
-            _ => {}
+    fn is_urgent_card(&self, state: &State, card: Card) -> bool {
+        if card.value == 5 {
+            return true;
+        }
+        let missing_cards_in_stack = state.board.highest_attainable(card.color) - card.value;
+        // (This is 2p-specific)
+        match missing_cards_in_stack {
+            0 | 1 => false,
+            // Playing a 3 is urgent unless we know we have the matching 5
+            2 => state.hands[state.board.player].iter().any(|&card_id| {
+                state.empathy[card_id as usize].probability_of_predicate(&|own_card| {
+                    own_card == Card::new(card.color, card.value + 2)
+                }) == 1.0
+            }),
+            3.. => true,
         }
     }
-
-    Ordering::Equal
-
-    // TODO: a lock should be unconventional if there are cluable safe actions
-    // TODO: stalling should be unconventional if there are cluable safe actions
-
-    // TODO:
-    // Ref play clues on unplayables
-    // - Forcing a bomb of trash is a logical alternative when
-    //   - the clue count is high enough and the alternative is discarding a useful card / locking
-    // - Forcing a bomb of a useful card is a logical alternative... never?
-    //   - Maybe if the alternative is discarding a critical because there is no possible lock clue
-    // - Forcing a bomb of a critical card is a logical alternative... never?
-    //
-    // - Sacrificing a card is a logical alternative when
-    //   - idk...
-    //
-    // Giving a ref discard instead of a ref play
-    // - When giving elim for a playable?
-    // - When it's a good line? (always logical alternative?)
-    // - Not when the clue count is very high (e.g. 7)?
-    //
-    // Giving a ref play instead of a clue which gets multiple safe actions
-    // - When the line is good?
-    // - What about first turn "always clue 1s" policies?
-    // - When the mainline bad touches?
 }
 
 #[derive(Debug, Copy, Clone, Default)]
@@ -431,7 +494,7 @@ impl Note {
         !self.clued && !self.play && !self.trash
     }
 
-    fn playable(&self) -> bool {
+    fn is_playable(&self) -> bool {
         // A card can be playable and later become trash
         self.play && !self.trash
     }
@@ -477,7 +540,7 @@ pub struct ChoiceDesc {
 #[derive(Clone)]
 pub enum ChoiceCategory {
     /// A play that was publicy known to be safe (instructed/good touch)
-    ExpectedPlay,
+    ExpectedPlay(CardId),
     /// A discard that was publicy known to be safe (trash/ptd)
     ExpectedDiscard,
     Sacrifice(CardId),
@@ -541,7 +604,7 @@ impl ChoiceDesc {
                 | HintCategory::LoadedRankStall
                 | HintCategory::Lock(_) => None,
             },
-            ChoiceCategory::ExpectedPlay
+            ChoiceCategory::ExpectedPlay(_)
             | ChoiceCategory::ExpectedDiscard
             | ChoiceCategory::Sacrifice(_) => None,
         }
@@ -553,7 +616,7 @@ impl ChoiceDesc {
                 // TODO: private empathy (e.g. using deductions from seen criticals in partner's hand)
                 1.0 - state.empathy[card_id as usize].probability_is_dispensable(&state.board)
             }
-            ChoiceCategory::ExpectedPlay
+            ChoiceCategory::ExpectedPlay(_)
             | ChoiceCategory::ExpectedDiscard
             | ChoiceCategory::Hint(_) => 0.0,
         }
@@ -575,7 +638,7 @@ impl ChoiceDesc {
                 | HintCategory::EightClueStall
                 | HintCategory::LoadedRankStall => false,
             },
-            ChoiceCategory::ExpectedPlay
+            ChoiceCategory::ExpectedPlay(_)
             | ChoiceCategory::ExpectedDiscard
             | ChoiceCategory::Sacrifice(_) => false,
         }
@@ -584,16 +647,43 @@ impl ChoiceDesc {
     fn is_discard(&self) -> bool {
         match self.category {
             ChoiceCategory::ExpectedDiscard | ChoiceCategory::Sacrifice(_) => true,
-            ChoiceCategory::ExpectedPlay | ChoiceCategory::Hint(_) => false,
+            ChoiceCategory::ExpectedPlay(_) | ChoiceCategory::Hint(_) => false,
         }
     }
 
     fn new_plays(&self) -> u32 {
         match &self.category {
-            ChoiceCategory::ExpectedPlay => 0,
-            ChoiceCategory::ExpectedDiscard => 0,
-            ChoiceCategory::Sacrifice(_) => 0,
             ChoiceCategory::Hint(hint) => hint.new_plays(),
+            ChoiceCategory::ExpectedPlay(_)
+            | ChoiceCategory::ExpectedDiscard
+            | ChoiceCategory::Sacrifice(_) => 0,
+        }
+    }
+
+    /// Returns true if this move is a play and the card it is playing should not be saved for the final round
+    ///
+    /// If this returns true, it's either playing a 1, a 2, a 3 whose 5 is visible, or a 5
+    fn is_playing_urgent_card(&self, knowledge: &PublicKnowledge, state: &State) -> bool {
+        match self.category {
+            // TODO: consider local empathy
+            ChoiceCategory::ExpectedPlay(card_id) => state.empathy[card_id as usize]
+                .get_possibilities()
+                .iter()
+                .all(|&card| {
+                    !state.board.is_playable(card) || knowledge.is_urgent_card(state, card)
+                }),
+            ChoiceCategory::ExpectedDiscard
+            | ChoiceCategory::Sacrifice(_)
+            | ChoiceCategory::Hint(_) => false,
+        }
+    }
+
+    fn is_play(&self) -> bool {
+        match self.category {
+            ChoiceCategory::ExpectedPlay(_) => true,
+            ChoiceCategory::ExpectedDiscard
+            | ChoiceCategory::Sacrifice(_)
+            | ChoiceCategory::Hint(_) => false,
         }
     }
 }

@@ -11,9 +11,7 @@ use crate::{
     strategy::{GameStrategy, GameStrategyConfig, PlayerStrategy},
 };
 
-use self::conventions::{
-    compare_conventional_alternatives, ChoiceCategory, ChoiceDesc, PublicKnowledge,
-};
+use self::conventions::{ChoiceCategory, ChoiceDesc, PublicKnowledge};
 
 #[derive(Clone)]
 pub struct Config;
@@ -177,16 +175,20 @@ impl RsPlayer<'_> {
             let one_conventional_alternative = interpretable_choices
                 .iter()
                 .map(|(_, desc)| desc)
-                .max_by(|a, b| compare_conventional_alternatives(&self.state, view, a, b))?
+                .max_by(|a, b| {
+                    self.knowledge
+                        .compare_conventional_alternatives(&self.state, view, a, b)
+                })?
                 .clone();
             interpretable_choices.retain(|(_, desc)| {
-                compare_conventional_alternatives(
-                    &self.state,
-                    view,
-                    desc,
-                    &one_conventional_alternative,
-                )
-                .is_ge()
+                self.knowledge
+                    .compare_conventional_alternatives(
+                        &self.state,
+                        view,
+                        desc,
+                        &one_conventional_alternative,
+                    )
+                    .is_ge()
             });
             interpretable_choices
         };

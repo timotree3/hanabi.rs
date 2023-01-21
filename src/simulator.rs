@@ -93,7 +93,8 @@ pub fn simulate_once(
             .get_players()
             .map(|player| strategies[player].name())
             .collect();
-        Some(json_format(&deck, &actions, &player_names))
+        let notes = strategies.iter().map(|(_, strategy)| strategy.notes()).collect();
+        Some(json_format(&deck, &actions, &player_names, notes))
     } else {
         None
     };

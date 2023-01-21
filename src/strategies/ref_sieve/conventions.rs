@@ -1,4 +1,7 @@
-use std::cmp::Ordering;
+use std::{
+    cmp::Ordering,
+    fmt::{Display, Write},
+};
 
 use crate::{
     game::{CardId, Hinted, Player, PlayerView, TOTAL_CARDS},
@@ -80,12 +83,16 @@ impl PublicKnowledge {
 
     /// Called whenever empathy might have changed
     pub fn check_empathy(&mut self, state: &State) {
-        // Update empathy knowledge in case a revealed copy or a change in playstacks had an effect
-        for (note, table) in self.notes.iter_mut().zip(&state.empathy) {
-            if table.probability_is_playable(&state.board) == 1.0 {
-                note.play = true
-            } else if table.probability_is_dead(&state.board) == 1.0 {
-                note.trash = true
+        // Update empathy knowledge on cards in hand in case a revealed copy or a change in playstacks had an effect
+        for (_, hand) in state.hands.iter() {
+            for &card_id in hand {
+                let note = self.note_mut(card_id);
+                let table = &state.empathy[card_id as usize];
+                if table.probability_is_playable(&state.board) == 1.0 {
+                    note.play = true
+                } else if table.probability_is_dead(&state.board) == 1.0 {
+                    note.trash = true
+                }
             }
         }
     }
@@ -293,6 +300,10 @@ impl PublicKnowledge {
         let newest = *state.hands[player].last().unwrap();
         !self.is_loaded(state, player) && self.note(newest).lock
     }
+
+    pub fn notes(&self) -> Vec<String> {
+        self.notes.iter().map(Note::to_string).collect()
+    }
 }
 
 /// Returns Ordering::Equal unless one choice is conventionally required over the other
@@ -404,6 +415,37 @@ impl Note {
     fn playable(&self) -> bool {
         // A card can be playable and later become trash
         self.play && !self.trash
+    }
+}
+
+impl Display for Note {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut need_pipe = false;
+        if self.lock {
+            f.write_str("lock ---->")?;
+            need_pipe = true;
+        }
+        if self.ptd {
+            if need_pipe {
+                f.write_str(" | ")?;
+            }
+            f.write_str("ptd")?;
+            need_pipe = true;
+        }
+        if self.play {
+            if need_pipe {
+                f.write_str(" | ")?;
+            }
+            f.write_str(if self.clued { "play" } else { "f" })?;
+            need_pipe = true;
+        }
+        if self.trash {
+            if need_pipe {
+                f.write_str(" | ")?;
+            }
+            f.write_str("kt")?;
+        }
+        Ok(())
     }
 }
 

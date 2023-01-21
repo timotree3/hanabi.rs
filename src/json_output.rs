@@ -61,6 +61,7 @@ pub fn json_format(
     deck: &[Card],
     actions: &Vec<serde_json::Value>,
     players: &Vec<String>,
+    notes: Vec<Vec<String>>,
 ) -> serde_json::Value {
     json!({
         "options": {
@@ -68,7 +69,7 @@ pub fn json_format(
         },
         "players": players,
         "first_player": 0,
-        "notes": players.iter().map(|_player| {json!([])}).collect::<Vec<_>>(), // TODO add notes
+        "notes": notes,
         // The deck is reversed since in our implementation we draw from the end of the deck.
         "deck": deck.iter().copied().map(card_to_json).collect::<Vec<serde_json::Value>>(),
         "actions": actions,

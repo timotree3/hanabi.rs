@@ -368,4 +368,8 @@ impl<'game> PlayerStrategy<'game> for RsPlayer<'game> {
 
         self.state.update_board(view, &mut self.knowledge);
     }
+
+    fn notes(&self) -> Vec<String> {
+        self.knowledge.notes()
+    }
 }

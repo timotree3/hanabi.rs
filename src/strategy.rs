@@ -17,6 +17,10 @@ pub trait PlayerStrategy<'game> {
     // A function to update internal state after other players' turns.
     // Given what happened last turn, and the new state.
     fn update(&mut self, turn_record: &TurnRecord, view: &PlayerView<'game>);
+    // Return a note per card explaining the knowledge about it in human-readable form
+    fn notes(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 // Represents the overall strategy for a game
 // Shouldn't do much, except store configuration parameters and

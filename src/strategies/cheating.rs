@@ -138,7 +138,7 @@ impl<'game> PlayerStrategy<'game> for CheatingPlayerStrategy {
     fn name(&self) -> String {
         String::from("cheat")
     }
-    fn decide(&mut self, view: &PlayerView<'_>) -> TurnChoice {
+    fn decide(&mut self, view: &PlayerView<'_>) -> Option<TurnChoice> {
         self.inform_last_player_cards(view);
 
         let hands = self.player_hands_cheat.borrow();
@@ -163,12 +163,12 @@ impl<'game> PlayerStrategy<'game> for CheatingPlayerStrategy {
                     play_score = score;
                 }
             }
-            return TurnChoice::Play(index);
+            return Some(TurnChoice::Play(index));
         }
 
         // cannot discard while at max hint count
         if view.board.hints_remaining == view.board.opts.num_hints {
-            return self.throwaway_hint(view);
+            return Some(self.throwaway_hint(view));
         }
 
         // discard threshold is how many cards we're willing to discard
@@ -181,19 +181,19 @@ impl<'game> PlayerStrategy<'game> for CheatingPlayerStrategy {
         if view.board.discard_size() <= discard_threshold {
             // if anything is totally useless, discard it
             if let Some(i) = self.find_useless_card(view, my_hand) {
-                return TurnChoice::Discard(i);
+                return Some(TurnChoice::Discard(i));
             }
         }
 
         // hinting is better than discarding dead cards
         // (probably because it stalls the deck-drawing).
         if view.board.hints_remaining > 0 && view.someone_else_can_play() {
-            return self.throwaway_hint(view);
+            return Some(self.throwaway_hint(view));
         }
 
         // if anything is totally useless, discard it
         if let Some(i) = self.find_useless_card(view, my_hand) {
-            return TurnChoice::Discard(i);
+            return Some(TurnChoice::Discard(i));
         }
 
         // All cards are plausibly useful.
@@ -213,7 +213,7 @@ impl<'game> PlayerStrategy<'game> for CheatingPlayerStrategy {
                 compval = my_compval;
             }
         }
-        TurnChoice::Discard(index)
+        Some(TurnChoice::Discard(index))
     }
     fn update(&mut self, _: &TurnRecord, _: &PlayerView<'_>) {}
 }

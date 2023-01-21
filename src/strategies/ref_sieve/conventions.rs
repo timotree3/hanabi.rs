@@ -32,9 +32,14 @@ impl PublicKnowledge {
             .expect("action taken should be conventional");
 
         match desc {
-            ChoiceDesc::Action(ActionDesc { gave_ptd }) => {
+            ChoiceDesc::Action(ActionDesc { gave_ptd, category }) => {
                 if let Some(chop) = gave_ptd {
                     self.note_mut(chop).ptd = true;
+                }
+                match category {
+                    ActionCategory::ExpectedPlay
+                    | ActionCategory::ExpectedDiscard
+                    | ActionCategory::Sacrifice(_) => {}
                 }
             }
             ChoiceDesc::Hint(HintDesc {
@@ -110,17 +115,23 @@ impl PublicKnowledge {
         // TODO: What if this play was known to give them an action
         Some(ActionDesc {
             gave_ptd: self.chop_if_unloaded(state, next_player),
+            category: ActionCategory::ExpectedPlay,
         })
     }
 
     fn describe_discard(&self, state: &State, card_id: CardId) -> Option<ActionDesc> {
-        if !self.note(card_id).trash && !self.note(card_id).ptd {
+        let category = if self.is_locked(state, state.board.player) {
+            ActionCategory::Sacrifice(card_id)
+        } else if self.note(card_id).trash || self.note(card_id).ptd {
+            ActionCategory::ExpectedDiscard
+        } else {
             return None;
-        }
+        };
         // If the next player is not loaded, give them PTD
         let next_player = state.board.player_to_right(state.board.player);
         Some(ActionDesc {
             gave_ptd: self.chop_if_unloaded(state, next_player),
+            category,
         })
     }
 
@@ -180,7 +191,9 @@ impl PublicKnowledge {
                 if let Some(target) = self.rank_clue_target(state, hint.receiver, &hint.touched) {
                     // check if target = chop. if so, it's a lock/8 clue stall
                     if target == chop {
-                        return if state.board.hints_remaining == state.board.opts.num_hints {
+                        return if hint.touched.contains(&chop) {
+                            Some(HintCategory::Lock(hint.receiver))
+                        } else if state.board.hints_remaining == state.board.opts.num_hints {
                             // TODO: 8cs actually should give ptd
                             Some(HintCategory::EightClueStall)
                         } else if self.is_locked(state, state.board.player) {
@@ -241,8 +254,9 @@ impl PublicKnowledge {
             let target = previously_unclued
                 [previously_unclued.len() - ((precedence + 1) % previously_unclued.len()) - 1];
 
-            // TODO: lock clues which touch slot 1
-            if touched.contains(&focus) && !touched.contains(&target) {
+            // The only time the target can be newly clued is if it's a lock
+            let is_lock = precedence == previously_unclued.len() - 1;
+            if touched.contains(&focus) && (is_lock || !touched.contains(&target)) {
                 return Some(target);
             }
         }
@@ -275,18 +289,28 @@ impl PublicKnowledge {
     }
 }
 
-pub fn is_conventional(view: &PlayerView<'_>, desc: &ChoiceDesc) -> bool {
+pub(super) fn is_conventional(state: &State, view: &PlayerView<'_>, desc: &ChoiceDesc) -> bool {
     match desc {
-        ChoiceDesc::Action(ActionDesc {
-            gave_ptd: Some(chop),
-        }) => {
-            let card = view.card(*chop);
-            // We don't give PTD to criticals or playables if we have a clue
-            // TODO: what if we have no choice? Does is_conventional need to be defined relative to alternatives?
-            view.board.hints_remaining == 0
-                || (!view.board.is_playable(card) && view.board.is_dispensable(card))
+        ChoiceDesc::Action(ActionDesc { gave_ptd, category }) => {
+            if let Some(chop) = gave_ptd {
+                let card = view.card(*chop);
+                // We don't give PTD to criticals or playables if we have a clue
+                // TODO: what if we have no choice? Does is_conventional need to be defined relative to alternatives?
+                if view.board.hints_remaining != 0
+                    && (view.board.is_playable(card) || !view.board.is_dispensable(card))
+                {
+                    return false;
+                }
+            }
+            match category {
+                ActionCategory::Sacrifice(card_id) => {
+                    // TODO: uncertain sacrifices
+                    // TODO: private empathy (e.g. using deductions from seen criticals in partner's hand)
+                    state.empathy[*card_id as usize].probability_is_dispensable(&state.board) == 1.0
+                }
+                ActionCategory::ExpectedPlay | ActionCategory::ExpectedDiscard => true,
+            }
         }
-        ChoiceDesc::Action(ActionDesc { gave_ptd: None }) => true,
         ChoiceDesc::Hint(HintDesc {
             new_known_plays: _,
             new_known_trash: _,
@@ -345,6 +369,15 @@ pub enum ChoiceDesc {
 
 pub struct ActionDesc {
     gave_ptd: Option<CardId>,
+    category: ActionCategory,
+}
+
+enum ActionCategory {
+    /// A play that was publicy known to be safe (instructed/good touch)
+    ExpectedPlay,
+    /// A discard that was publicy known to be safe (trash/ptd)
+    ExpectedDiscard,
+    Sacrifice(CardId),
 }
 
 #[derive(Debug)]

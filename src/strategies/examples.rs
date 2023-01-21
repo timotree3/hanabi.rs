@@ -46,9 +46,9 @@ impl<'game> PlayerStrategy<'game> for RandomStrategyPlayer {
             self.hint_probability, self.play_probability
         )
     }
-    fn decide(&mut self, view: &PlayerView<'_>) -> TurnChoice {
+    fn decide(&mut self, view: &PlayerView<'_>) -> Option<TurnChoice> {
         let p = rand::random::<f64>();
-        if p < self.play_probability {
+        Some(if p < self.play_probability {
             TurnChoice::Play(0)
         } else if view.board.hints_remaining == view.board.opts.num_hints
             || (view.board.hints_remaining > 0 && p < self.play_probability + self.hint_probability)
@@ -73,7 +73,7 @@ impl<'game> PlayerStrategy<'game> for RandomStrategyPlayer {
             })
         } else {
             TurnChoice::Discard(0)
-        }
+        })
     }
     fn update(&mut self, _: &TurnRecord, _: &PlayerView<'_>) {}
 }

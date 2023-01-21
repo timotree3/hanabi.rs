@@ -60,17 +60,20 @@ pub fn simulate_once(
         let choice = strategies[player].decide(&game.get_view(player));
         if output_json {
             actions.push(match choice {
-                TurnChoice::Hint(ref hint) => action_clue(hint),
-                TurnChoice::Play(index) => {
+                Some(TurnChoice::Hint(ref hint)) => action_clue(hint),
+                Some(TurnChoice::Play(index)) => {
                     let card_id = game.hands[player][index];
                     action_play(card_id)
                 }
-                TurnChoice::Discard(index) => {
+                Some(TurnChoice::Discard(index)) => {
                     let card_id = game.hands[player][index];
                     action_discard(card_id)
                 }
+                None => action_terminate(player),
             });
         }
+
+        let Some(choice) = choice else { break };
 
         let turn = game.process_choice(choice);
 

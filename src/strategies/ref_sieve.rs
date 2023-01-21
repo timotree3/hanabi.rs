@@ -159,17 +159,20 @@ impl RsPlayer<'_> {
     ///
     /// Mutates self in place for efficiency but should leave it unchanged upon exiting.
 
-    fn choose(&mut self, view: &PlayerView<'_>) -> Choice {
+    fn choose(&mut self, view: &PlayerView<'_>) -> Option<Choice> {
         let backup_empathy = self.state.empathy.clone();
-        let (choice, _) = possible_choices(view)
+        if let Some((choice, _)) = possible_choices(view)
             .filter_map(|choice| {
                 self.describe_choice(&choice, &backup_empathy)
+                    .filter(|desc| is_conventional(&self.state, view, desc))
                     .map(|desc| (choice, desc))
             })
-            .filter(|(_, choice_desc)| is_conventional(view, choice_desc))
             .max_by(|a, b| compare_choice(view, a, b))
-            .expect("there should be at least one conventional option");
-        choice
+        {
+            Some(choice)
+        } else {
+            None
+        }
     }
 }
 
@@ -281,15 +284,15 @@ impl<'game> PlayerStrategy<'game> for RsPlayer<'game> {
         "rs".to_owned()
     }
 
-    fn decide(&mut self, view: &PlayerView<'_>) -> TurnChoice {
-        let choice = self.choose(view);
+    fn decide(&mut self, view: &PlayerView<'_>) -> Option<TurnChoice> {
+        let choice = self.choose(view)?;
         let card_id_to_index = |card_id| {
             self.state.hands[view.me()]
                 .iter()
                 .position(|&id| id == card_id)
         };
 
-        match choice {
+        Some(match choice {
             Choice::Play(card_id) => TurnChoice::Play(
                 card_id_to_index(card_id).expect("chose to play a card which was not held"),
             ),
@@ -297,7 +300,7 @@ impl<'game> PlayerStrategy<'game> for RsPlayer<'game> {
                 card_id_to_index(card_id).expect("chose to play a card which was not held"),
             ),
             Choice::Hint(hint) => TurnChoice::Hint(hint.choice()),
-        }
+        })
     }
 
     fn update(&mut self, turn_record: &TurnRecord, view: &PlayerView<'game>) {

@@ -983,11 +983,11 @@ impl<'game> PlayerStrategy<'game> for InformationPlayerStrategy<'game> {
         String::from("info")
     }
 
-    fn decide(&mut self, _: &PlayerView<'_>) -> TurnChoice {
+    fn decide(&mut self, _: &PlayerView<'_>) -> Option<TurnChoice> {
         let mut public_info = self.public_info.clone();
         let turn_choice = self.decide_wrapped(&mut public_info);
         self.new_public_info = Some(public_info);
-        turn_choice
+        Some(turn_choice)
     }
 
     fn update(&mut self, turn_record: &TurnRecord, view: &PlayerView<'game>) {

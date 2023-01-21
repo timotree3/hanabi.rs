@@ -11,7 +11,9 @@ pub trait PlayerStrategy<'game> {
     fn name(&self) -> String;
     // A function to decide what to do on the player's turn.
     // Given a BorrowedGameView, outputs their choice.
-    fn decide(&mut self, view: &PlayerView<'game>) -> TurnChoice;
+    //
+    // If `decide` returns None, the game is terminated.
+    fn decide(&mut self, view: &PlayerView<'game>) -> Option<TurnChoice>;
     // A function to update internal state after other players' turns.
     // Given what happened last turn, and the new state.
     fn update(&mut self, turn_record: &TurnRecord, view: &PlayerView<'game>);

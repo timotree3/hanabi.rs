@@ -47,6 +47,15 @@ pub fn action_discard(card_id: CardId) -> serde_json::Value {
         "target": card_id,
     })
 }
+pub fn action_terminate(player: Player) -> serde_json::Value {
+    json!({
+        // 4 represent game end
+        "type": 4,
+        "target": player,
+        // 4 represnts manual termination
+        "value": 4
+    })
+}
 
 pub fn json_format(
     deck: &[Card],

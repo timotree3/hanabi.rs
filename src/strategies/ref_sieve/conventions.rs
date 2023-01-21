@@ -373,6 +373,17 @@ pub(super) fn compare_conventional_alternatives(
         (Some(_), Some(_)) => {}
     }
 
+    // Avoid discarding to 8 clues or at pace < players when you could give a new play
+    if view.board.hints_remaining == view.board.opts.num_hints - 1
+        || view.board.pace() < view.board.opts.num_players
+    {
+        match (a.is_discard(), a.new_plays(), b.is_discard(), b.new_plays()) {
+            (true, 0, _, 1..) => return Ordering::Less,
+            (_, 1.., true, 0) => return Ordering::Greater,
+            _ => {}
+        }
+    }
+
     Ordering::Equal
 
     // TODO: a lock should be unconventional if there are cluable safe actions
@@ -569,10 +580,26 @@ impl ChoiceDesc {
             | ChoiceCategory::Sacrifice(_) => false,
         }
     }
+
+    fn is_discard(&self) -> bool {
+        match self.category {
+            ChoiceCategory::ExpectedDiscard | ChoiceCategory::Sacrifice(_) => true,
+            ChoiceCategory::ExpectedPlay | ChoiceCategory::Hint(_) => false,
+        }
+    }
+
+    fn new_plays(&self) -> u32 {
+        match &self.category {
+            ChoiceCategory::ExpectedPlay => 0,
+            ChoiceCategory::ExpectedDiscard => 0,
+            ChoiceCategory::Sacrifice(_) => 0,
+            ChoiceCategory::Hint(hint) => hint.new_plays(),
+        }
+    }
 }
 
 impl HintCategory {
-    fn new_plays(&self) -> usize {
+    fn new_plays(&self) -> u32 {
         match self {
             HintCategory::RefPlay(_) => 1,
             HintCategory::RefDiscard(_)
@@ -587,8 +614,8 @@ impl HintCategory {
 }
 
 impl HintDesc {
-    pub fn new_plays(&self) -> usize {
-        self.new_known_plays.len() + self.category.new_plays()
+    pub fn new_plays(&self) -> u32 {
+        self.new_known_plays.len() as u32 + self.category.new_plays()
     }
 }
 // Lowest to highest severity

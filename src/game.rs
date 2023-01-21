@@ -347,6 +347,13 @@ impl<'game> BoardState<'game> {
         self.fireworks.values().map(Firework::score).sum()
     }
 
+    pub fn max_score(&self) -> Score {
+        self.fireworks
+            .keys()
+            .map(|&color| self.highest_attainable(color))
+            .sum()
+    }
+
     pub fn discard_size(&self) -> u32 {
         self.discard.size
     }
@@ -370,6 +377,11 @@ impl<'game> BoardState<'game> {
         } else {
             None
         }
+    }
+
+    /// Returns the number of discards that can be made while still have a chance of max score
+    pub(crate) fn pace(&self) -> u32 {
+        self.deck_size + self.opts.num_players - (self.max_score() - self.score())
     }
 }
 impl fmt::Display for BoardState<'_> {

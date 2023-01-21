@@ -205,9 +205,11 @@ pub fn is_conventional(view: &PlayerView<'_>, desc: &ChoiceDesc) -> bool {
             gave_ptd: Some(chop),
         }) => {
             let card = view.card(*chop);
-            // We don't give PTD to criticals or playables
+            // We don't give PTD to criticals or playables if we have a clue
             // TODO: what if we have no choice? Does is_conventional need to be defined relative to alternatives?
-            view.board.is_dispensable(card) && !view.board.is_playable(card)
+            view.board.hints_remaining == 0 || !view.board.is_playable(card)
+            // TODO: uncomment once we have a conventional way of saving criticals
+            // && view.board.is_dispensable(card)
         }
         ChoiceDesc::Action(ActionDesc { gave_ptd: None }) => true,
         ChoiceDesc::Hint(HintDesc {

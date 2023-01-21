@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use crate::{
     game::{
         BoardState, Card, CardCounts, CardId, GameOptions, Hand, Hint as HintChoice, Hinted,
@@ -57,6 +59,10 @@ impl Note {
     fn is_action(&self) -> bool {
         self.play || self.trash || self.ptd
     }
+
+    fn unclued(&self) -> bool {
+        !self.clued && !self.play && !self.trash
+    }
 }
 
 impl<'game> Public<'game> {
@@ -82,8 +88,38 @@ impl<'game> Public<'game> {
     }
 
     fn unclued(&self, card_id: CardId) -> bool {
-        let note = self.note(card_id);
-        !note.clued && !note.play
+        self.note(card_id).unclued()
+    }
+
+    fn describe_choice(&self, choice: &Choice) -> Option<ChoiceDesc> {
+        match choice {
+            Choice::Play(card_id) => self.describe_play(*card_id).map(ChoiceDesc::Action),
+            Choice::Discard(card_id) => self.describe_discard(*card_id).map(ChoiceDesc::Action),
+            Choice::Hint(hint) => self.describe_hint(hint).map(ChoiceDesc::Hint),
+        }
+    }
+
+    fn describe_play(&self, card_id: CardId) -> Option<ActionDesc> {
+        if !self.note(card_id).play {
+            return None;
+        }
+        // If the next player is not loaded, give them PTD
+        let next_player = self.board.player_to_right(self.board.player);
+        // TODO: What if this play was known to give them an action
+        Some(ActionDesc {
+            gave_ptd: self.chop_if_unloaded(next_player),
+        })
+    }
+
+    fn describe_discard(&self, card_id: CardId) -> Option<ActionDesc> {
+        if !self.note(card_id).trash && !self.note(card_id).ptd {
+            return None;
+        }
+        // If the next player is not loaded, give them PTD
+        let next_player = self.board.player_to_right(self.board.player);
+        Some(ActionDesc {
+            gave_ptd: self.chop_if_unloaded(next_player),
+        })
     }
 
     fn describe_hint(&self, hint: &Hint) -> Option<HintDesc> {
@@ -182,25 +218,25 @@ impl<'game> Public<'game> {
         None
     }
 
+    fn chop_if_unloaded(&self, player: Player) -> Option<CardId> {
+        (!self.is_loaded(player)).then(|| *self.hands[player].last().unwrap())
+    }
+
     fn interpret_play(&mut self, card_id: CardId) {
-        assert!(self.note(card_id).play);
-        // If the next player is not loaded, give them PTD
-        let next_player = self.board.player_to_right(self.board.player);
-        // TODO: What if this play was known to give them an action
-        if !self.is_loaded(next_player) {
-            let newest_card_id = *self.hands[next_player].last().unwrap();
-            self.note_mut(newest_card_id).ptd = true;
+        let ActionDesc { gave_ptd } = self.describe_play(card_id).expect("unconventional play");
+
+        if let Some(chop) = gave_ptd {
+            self.note_mut(chop).ptd = true;
         }
     }
 
     fn interpret_discard(&mut self, card_id: CardId) {
-        assert!(self.note(card_id).trash || self.note(card_id).ptd);
-        // If the next player is not loaded, give them PTD
-        let next_player = self.board.player_to_right(self.board.player);
-        // TODO: What if this play was known to give them an action
-        if !self.is_loaded(next_player) {
-            let newest_card_id = *self.hands[next_player].last().unwrap();
-            self.note_mut(newest_card_id).ptd = true;
+        let ActionDesc { gave_ptd } = self
+            .describe_discard(card_id)
+            .expect("unconventional discard");
+
+        if let Some(chop) = gave_ptd {
+            self.note_mut(chop).ptd = true;
         }
     }
 
@@ -232,8 +268,8 @@ impl<'game> Public<'game> {
             assert!(view.board.deck_size == self.board.deck_size - 1);
             self.draw_card();
         }
-        self.hands = view.hands().clone();
-        self.board = view.board.clone();
+        self.hands.clone_from(view.hands());
+        self.board.clone_from(&view.board);
 
         // Update empathy knowledge in case a revealed copy or a change in playstacks had an effect
         for (note, table) in self.notes.iter_mut().zip(&self.empathy) {
@@ -269,6 +305,22 @@ impl<'game> Public<'game> {
         // TODO: Use definition of trash that includes duplicates
         self.empathy[card_id as usize].probability_is_dead(&self.board) == 1.0
     }
+}
+
+enum Choice {
+    Play(CardId),
+    Discard(CardId),
+    Hint(Hint),
+}
+
+enum ChoiceDesc {
+    /// A play or a discard
+    Action(ActionDesc),
+    Hint(HintDesc),
+}
+
+struct ActionDesc {
+    gave_ptd: Option<CardId>,
 }
 
 struct Hint {
@@ -320,36 +372,90 @@ struct RsPlayer<'game> {
 }
 
 impl RsPlayer<'_> {
-    /// Determines the best hint available.
+    fn describe_choice(
+        &mut self,
+        choice: &Choice,
+        backup_empathy: &[CardPossibilityTable],
+    ) -> Option<ChoiceDesc> {
+        if let Choice::Hint(hint) = choice {
+            // Hack: Update the empathy as it would be after the hint was given
+            self.public.update_empathy_for_hint(hint);
+        }
+        let desc = self.public.describe_choice(choice);
+        if let Choice::Hint(_) = choice {
+            // Restore the empathy
+            self.public.empathy.clone_from_slice(backup_empathy);
+        }
+        desc
+    }
+
+    /// Chooses a preferred move in the position.
     ///
     /// Mutates self in place for efficiency but should leave it unchanged upon exiting.
-    fn best_hint(&mut self, view: &PlayerView<'_>) -> Option<HintChoice> {
-        let mut best: Option<(Hint, HintDesc)> = None;
 
-        let actual_empathy = self.public.empathy.clone();
-        for hint in possible_hints(view) {
-            // Update the empathy as it would be after the hint was given
-            self.public.update_empathy_for_hint(&hint);
+    fn choose(&mut self, view: &PlayerView<'_>) -> Choice {
+        let backup_empathy = self.public.empathy.clone();
+        let (choice, _) = possible_choices(view)
+            .filter_map(|choice| {
+                self.describe_choice(&choice, &backup_empathy)
+                    .map(|desc| (choice, desc))
+            })
+            .filter(|(_, choice_desc)| is_conventional(view, choice_desc))
+            .max_by(|a, b| compare_choice(view, a, b))
+            .expect("there should be at least one conventional option");
+        choice
+    }
+}
 
-            if let Some(desc) = self.public.describe_hint(&hint) {
-                if is_hint_conventional(view, desc.category) {
-                    best = Some(if let Some((best_hint, best_desc)) = best {
-                        if desc.new_plays() > best_desc.new_plays() {
-                            (hint, desc)
-                        } else {
-                            (best_hint, best_desc)
-                        }
-                    } else {
-                        (hint, desc)
-                    });
-                }
-            }
+fn possible_choices<'a>(view: &'a PlayerView<'_>) -> impl Iterator<Item = Choice> + 'a {
+    let my_hand = view.hands()[view.me()].iter().copied();
+    let plays = my_hand.clone().map(Choice::Play);
+    let mut discards = my_hand.map(Choice::Discard);
+    let mut hints = possible_hints(view).map(Choice::Hint);
+    match view.board.hints_remaining {
+        // Hinting is impossible with 0 left
+        0 => hints.by_ref().for_each(drop),
+        // Discarding is impossible at max hint count
+        n if n == view.board.opts.num_hints => discards.by_ref().for_each(drop),
+        _ => {}
+    }
+    plays.chain(discards).chain(hints)
+}
 
-            // Restore the empathy
-            self.public.empathy.clone_from(&actual_empathy);
+fn is_conventional(view: &PlayerView<'_>, desc: &ChoiceDesc) -> bool {
+    match desc {
+        ChoiceDesc::Action(ActionDesc {
+            gave_ptd: Some(chop),
+        }) => {
+            let card = view.card(*chop);
+            // We don't give PTD to criticals or playables
+            view.board.is_dispensable(card) && !view.board.is_playable(card)
         }
+        ChoiceDesc::Action(ActionDesc { gave_ptd: None }) => true,
+        ChoiceDesc::Hint(HintDesc {
+            new_known_plays: _,
+            new_known_trash: _,
+            category,
+        }) => is_hint_conventional(view, *category),
+    }
+}
 
-        best.map(|(hint, _)| hint.choice())
+fn compare_choice(
+    _view: &PlayerView<'_>,
+    a: &(Choice, ChoiceDesc),
+    b: &(Choice, ChoiceDesc),
+) -> Ordering {
+    match (a, b) {
+        (
+            (Choice::Hint(_), ChoiceDesc::Hint(hint_a)),
+            (Choice::Hint(_), ChoiceDesc::Hint(hint_b)),
+        ) => hint_a.new_plays().cmp(&hint_b.new_plays()),
+        ((Choice::Hint(_), _), _) => Ordering::Greater,
+        (_, (Choice::Hint(_), _)) => Ordering::Less,
+        ((Choice::Play(_), _), (Choice::Play(_), _)) => Ordering::Equal,
+        ((Choice::Play(_), _), (_, _)) => Ordering::Greater,
+        ((_, _), (Choice::Play(_), _)) => Ordering::Less,
+        ((Choice::Discard(_), _), (Choice::Discard(_), _)) => Ordering::Equal,
     }
 }
 
@@ -420,29 +526,21 @@ impl<'game> PlayerStrategy<'game> for RsPlayer<'game> {
     }
 
     fn decide(&mut self, view: &PlayerView<'_>) -> TurnChoice {
-        let mut my_hand = self.public.hands[view.me()].iter();
-        let my_play = my_hand
-            .clone()
-            .position(|&card_id| self.public.note(card_id).play);
-        let my_trash = my_hand
-            .clone()
-            .position(|&card_id| self.public.note(card_id).trash);
-        let my_ptd = my_hand.position(|&card_id| self.public.note(card_id).ptd);
+        let choice = self.choose(view);
+        let card_id_to_index = |card_id| {
+            self.public.hands[view.me()]
+                .iter()
+                .position(|&id| id == card_id)
+        };
 
-        let best_hint = self.best_hint(view);
-
-        match (
-            best_hint,
-            my_play,
-            my_trash,
-            my_ptd,
-            view.board.hints_remaining,
-        ) {
-            (Some(hint), _, _, _, 1..) => TurnChoice::Hint(hint),
-            (_, Some(play), _, _, _) => TurnChoice::Play(play),
-            (_, _, Some(trash), _, _) => TurnChoice::Discard(trash),
-            (_, _, _, Some(ptd), _) => TurnChoice::Discard(ptd),
-            (_, None, None, None, _) => panic!("No safe action or ptd and not first turn"),
+        match choice {
+            Choice::Play(card_id) => TurnChoice::Play(
+                card_id_to_index(card_id).expect("chose to play a card which was not held"),
+            ),
+            Choice::Discard(card_id) => TurnChoice::Discard(
+                card_id_to_index(card_id).expect("chose to play a card which was not held"),
+            ),
+            Choice::Hint(hint) => TurnChoice::Hint(hint.choice()),
         }
     }
 

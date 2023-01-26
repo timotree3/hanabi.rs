@@ -73,6 +73,10 @@ impl ModulusInformation {
     }
 }
 
+/// Adds a note to the card in the given index which will show up if a human views the replay of this game
+pub type AddNoteToPlayer<'a> = &'a mut dyn FnMut(Player, usize, String);
+pub type AddNoteToIndex<'a> = &'a mut dyn FnMut(usize, String);
+
 pub trait Question {
     // how much info does this question ask for?
     fn info_amount(&self) -> u32;
@@ -84,6 +88,7 @@ pub trait Question {
         value: u32,
         hand_info: &mut HandInfo<CardPossibilityTable>,
         board: &BoardState<'_>,
+        add_note: AddNoteToIndex,
     );
 
     fn answer_info(&self, hand: &[Card], board: &BoardState<'_>) -> ModulusInformation {
@@ -95,9 +100,10 @@ pub trait Question {
         answer: ModulusInformation,
         hand_info: &mut HandInfo<CardPossibilityTable>,
         board: &BoardState<'_>,
+        add_note: AddNoteToIndex,
     ) {
         assert!(self.info_amount() == answer.modulus);
-        self.acknowledge_answer(answer.value, hand_info, board);
+        self.acknowledge_answer(answer.value, hand_info, board, add_note);
     }
 }
 
@@ -166,6 +172,7 @@ pub trait PublicInformation: Clone {
         hand_info: &mut HandInfo<CardPossibilityTable>,
         total_info: u32,
         view: &PlayerView<'_>,
+        add_note: AddNoteToIndex,
     ) -> ModulusInformation {
         assert!(player != view.me());
         let mut answer_info = ModulusInformation::none();
@@ -174,7 +181,12 @@ pub trait PublicInformation: Clone {
         {
             let new_answer_info =
                 question.answer_info(&view.hand(player).cards().collect::<Vec<_>>(), &view.board);
-            question.acknowledge_answer_info(new_answer_info.clone(), hand_info, &view.board);
+            question.acknowledge_answer_info(
+                new_answer_info.clone(),
+                hand_info,
+                &view.board,
+                add_note,
+            );
             answer_info.combine(new_answer_info, total_info);
         }
         answer_info.cast_up(total_info);
@@ -187,10 +199,11 @@ pub trait PublicInformation: Clone {
         hand_info: &mut HandInfo<CardPossibilityTable>,
         board: &BoardState<'_>,
         mut info: ModulusInformation,
+        add_note: AddNoteToIndex,
     ) {
         while let Some(question) = self.ask_question_wrapper(player, hand_info, info.modulus) {
             let answer_info = info.split(question.info_amount());
-            question.acknowledge_answer_info(answer_info, hand_info, board);
+            question.acknowledge_answer_info(answer_info, hand_info, board, add_note);
         }
         assert!(info.value == 0);
     }
@@ -198,12 +211,23 @@ pub trait PublicInformation: Clone {
     /// When deciding on a move, if we can choose between `total_info` choices,
     /// `self.get_hat_sum(total_info, view)` tells us which choice to take, and at the same time
     /// mutates `self` to simulate the choice becoming common knowledge.
-    fn get_hat_sum(&mut self, total_info: u32, view: &PlayerView<'_>) -> ModulusInformation {
+    fn get_hat_sum(
+        &mut self,
+        total_info: u32,
+        view: &PlayerView<'_>,
+        add_note: AddNoteToPlayer,
+    ) -> ModulusInformation {
         let (infos, new_player_hands): (Vec<_>, Vec<_>) = view
             .other_players()
             .map(|player| {
                 let mut hand_info = self.get_player_info(player);
-                let info = self.get_hat_info_for_player(player, &mut hand_info, total_info, view);
+                let info = self.get_hat_info_for_player(
+                    player,
+                    &mut hand_info,
+                    total_info,
+                    view,
+                    &mut |index, note| add_note(player, index, note),
+                );
                 (info, (player, hand_info))
             })
             .unzip();
@@ -220,15 +244,25 @@ pub trait PublicInformation: Clone {
     /// When updating on a move, if we infer that the player making the move called `get_hat_sum()`
     /// and got the result `info`, we can call `self.update_from_hat_sum(info, view)` to update
     /// from that fact.
-    fn update_from_hat_sum(&mut self, mut info: ModulusInformation, view: &PlayerView<'_>) {
+    fn update_from_hat_sum(
+        &mut self,
+        mut info: ModulusInformation,
+        view: &PlayerView<'_>,
+        add_note: AddNoteToPlayer,
+    ) {
         let info_source = view.board.player;
         let (other_infos, mut new_player_hands): (Vec<_>, Vec<_>) = view
             .other_players()
             .filter(|player| *player != info_source)
             .map(|player| {
                 let mut hand_info = self.get_player_info(player);
-                let player_info =
-                    self.get_hat_info_for_player(player, &mut hand_info, info.modulus, view);
+                let player_info = self.get_hat_info_for_player(
+                    player,
+                    &mut hand_info,
+                    info.modulus,
+                    view,
+                    &mut |index, note| add_note(player, index, note),
+                );
                 (player_info, (player, hand_info))
             })
             .unzip();
@@ -239,7 +273,13 @@ pub trait PublicInformation: Clone {
             assert!(info.value == 0);
         } else {
             let mut my_hand = self.get_player_info(view.me());
-            self.update_from_hat_info_for_player(view.me(), &mut my_hand, &view.board, info);
+            self.update_from_hat_info_for_player(
+                view.me(),
+                &mut my_hand,
+                &view.board,
+                info,
+                &mut |index, note| add_note(view.me(), index, note),
+            );
             new_player_hands.push((view.me(), my_hand));
         }
         self.set_player_infos(new_player_hands);

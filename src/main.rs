@@ -6,6 +6,7 @@ mod strategy;
 mod strategies {
     pub mod cheating;
     pub mod examples;
+    // pub mod finesses;
     mod hat_helpers;
     pub mod information;
     pub mod ref_sieve;

@@ -8,42 +8,61 @@ use crate::{
 use super::{Choice, Hint, State};
 
 pub(super) struct PublicKnowledge {
+    queued_clues: Vec<QueuedHatClue>,
     notes: Vec<Note>,
+}
+
+#[derive(Debug, Clone)]
+struct QueuedHatClue {
+    remaining_slot_sum: u8,
+    remaining_plays: u8,
+    // OPTIMIZATION: use bitset
+    remaining_play_responders: Vec<Player>,
+    remaining_discard_responders: Vec<Player>,
 }
 
 impl PublicKnowledge {
     pub fn first_turn() -> Self {
         Self {
             notes: vec![Note::default(); TOTAL_CARDS as usize],
+            queued_clues: Vec::new(),
         }
     }
 
     pub fn describe_choice(&self, state: &State, choice: &Choice) -> Option<ChoiceDesc> {
-        match choice {
-            Choice::Play(card_id) => self.describe_play(state, *card_id),
-            Choice::Discard(card_id) => self.describe_discard(state, *card_id),
-            Choice::Hint(hint) => self.describe_hint(state, hint),
-        }
+        Some(ChoiceDesc {
+            category: match choice {
+                Choice::Play(card_id) => self.categorize_play(state, *card_id),
+                Choice::Discard(card_id) => self.categorize_discard(state, *card_id),
+                Choice::Hint(hint) => ChoiceCategory::Hint(self.describe_hint(state, hint)),
+            },
+        })
     }
 
-    pub fn interpret_choice(&mut self, state: &State, choice: &Choice) {
-        let ChoiceDesc { gave_ptd, category } = self
+    pub fn interpret_choice(
+        &mut self,
+        state: &State,
+        choice: &Choice,
+        // Mirrors the queued_hat_clue vector, providing the slot that this move will subtract
+        // from the remaining sum of each hat clue if this move does not respond to it.
+        // This is not exactly public information, so we pass it as an argument.
+        reaction_if_ignored: Vec<Option<u8>>,
+    ) {
+        let ChoiceDesc {
+            responder,
+            category,
+        } = self
             .describe_choice(state, choice)
             .expect("action taken should be conventional");
-        if let Some(chop) = gave_ptd {
-            self.note_mut(chop).ptd = true;
-        }
-        match category {
-            ChoiceCategory::ExpectedPlay(_)
-            | ChoiceCategory::ExpectedDiscard
-            | ChoiceCategory::Sacrifice(_) => {}
 
+        let reaction = match category {
             ChoiceCategory::Hint(HintDesc {
-                new_known_plays,
+                new_obvious_plays,
                 new_known_trash,
-                category,
+                new_known_cards,
+                hat_clue,
             }) => {
-                for card_id in new_known_plays {
+                for card_id in new_obvious_plays {
                     self.note_mut(card_id).play = true;
                 }
 
@@ -51,31 +70,25 @@ impl PublicKnowledge {
                     self.note_mut(card_id).trash = true;
                 }
 
-                match category {
-                    HintCategory::RefPlay(target) => {
-                        self.note_mut(target).play = true;
-                    }
-                    HintCategory::RefDiscard(_) => {
-                        // The target already has been given PTD due to the `gave_ptd` field
-                    }
-                    HintCategory::Lock(player) => {
-                        let newest = *state.hands[player].last().unwrap();
-                        self.note_mut(newest).lock = true;
-                    }
-                    HintCategory::EightClueStall
-                    | HintCategory::FillIn
-                    | HintCategory::RankAction
-                    | HintCategory::LockedHandStall => {}
-                    HintCategory::LoadedRankStall => {}
+                for card_id in new_known_cards {
+                    self.note_mut(card_id).known = true;
                 }
-            }
-        }
 
-        if let Choice::Hint(hint) = choice {
-            for &card_id in &hint.touched {
-                self.note_mut(card_id).clued = true;
+                // todo: add a queued hat clue
+                Reaction::Ignore
             }
-        }
+            ChoiceCategory::ExpectedPlay
+            | ChoiceCategory::ExpectedDiscard
+            | ChoiceCategory::KnownMisplay
+            | ChoiceCategory::KnownDiscard => {
+                // TODO:
+                // - KnownDiscard should give elim/promise position
+                // - KnownMisplay could mean something
+                Reaction::Ignore
+            }
+            ChoiceCategory::UnexpectedPlay { slot } => Reaction::Play { slot },
+            ChoiceCategory::UnexpectedDiscard { slot } => Reaction::Discard { slot },
+        };
     }
 
     /// Called whenever empathy might have changed
@@ -102,44 +115,39 @@ impl PublicKnowledge {
         &mut self.notes[card_id as usize]
     }
 
-    fn unclued(&self, card_id: CardId) -> bool {
-        self.note(card_id).unclued()
-    }
-
-    fn describe_play(&self, state: &State, card_id: CardId) -> Option<ChoiceDesc> {
-        if !self.note(card_id).is_playable() {
-            return None;
-        }
-        // If the next player is not loaded, give them PTD
-        let next_player = state.board.player_to_right(state.board.player);
-        // TODO: What if this play was known to give them an action
-        Some(ChoiceDesc {
-            gave_ptd: self.chop_if_unloaded(state, next_player),
-            category: ChoiceCategory::ExpectedPlay(card_id),
-        })
-    }
-
-    fn describe_discard(&self, state: &State, card_id: CardId) -> Option<ChoiceDesc> {
-        let category = if self.is_locked(state, state.board.player) {
-            ChoiceCategory::Sacrifice(card_id)
-        } else if self.note(card_id).trash || self.note(card_id).ptd {
-            ChoiceCategory::ExpectedDiscard
+    fn categorize_play(&self, state: &State, card_id: CardId) -> ChoiceCategory {
+        if self.note(card_id).play {
+            ChoiceCategory::ExpectedPlay
+        } else if self.note(card_id).known {
+            ChoiceCategory::KnownMisplay
         } else {
-            return None;
-        };
-        // If the next player is not loaded, give them PTD
-        let next_player = state.board.player_to_right(state.board.player);
-        Some(ChoiceDesc {
-            gave_ptd: self.chop_if_unloaded(state, next_player),
-            category,
-        })
+            ChoiceCategory::UnexpectedDiscard
+        }
     }
 
-    fn describe_hint(&self, state: &State, hint: &Hint) -> Option<ChoiceDesc> {
-        let new_known_plays: Vec<CardId> = state.hands[hint.receiver]
+    fn categorize_discard(&self, state: &State, card_id: CardId) -> ChoiceCategory {
+        if self.note(card_id).trash {
+            ChoiceCategory::ExpectedDiscard
+        } else if self.note(card_id).known {
+            ChoiceCategory::KnownDiscard
+        } else {
+            ChoiceCategory::UnexpectedDiscard
+        }
+    }
+
+    fn describe_hint(&self, state: &State, hint: &Hint) -> HintDesc {
+        let new_obvious_plays: Vec<CardId> = state.hands[hint.receiver]
             .iter()
             .copied()
-            .filter(|&card_id| !self.note(card_id).play && state.is_empathy_playable(card_id))
+            .filter(|&card_id| {
+                !self.note(card_id).play && state.is_empathy_permanently_playable(card_id)
+            })
+            .collect();
+
+        let new_known_cards: Vec<CardId> = state.hands[hint.receiver]
+            .iter()
+            .copied()
+            .filter(|&card_id| !self.note(card_id).known && state.is_empathy_known(card_id))
             .collect();
 
         let new_known_trash: Vec<CardId> = state.hands[hint.receiver]
@@ -148,143 +156,12 @@ impl PublicKnowledge {
             .filter(|&card_id| !self.note(card_id).trash && state.is_empathy_trash(card_id))
             .collect();
 
-        self.categorize_hint(state, hint, &new_known_plays, &new_known_trash)
-            .map(|category| ChoiceDesc {
-                gave_ptd: match category {
-                    HintCategory::RefDiscard(target) => Some(target),
-                    HintCategory::LockedHandStall | HintCategory::EightClueStall => {
-                        Some(*state.hands[hint.receiver].last().unwrap())
-                    }
-                    HintCategory::RefPlay(_)
-                    | HintCategory::FillIn
-                    | HintCategory::RankAction
-                    | HintCategory::Lock(_)
-                    | HintCategory::LoadedRankStall => None,
-                },
-                category: ChoiceCategory::Hint(HintDesc {
-                    new_known_plays,
-                    new_known_trash,
-                    category,
-                }),
-            })
-    }
-
-    fn categorize_hint(
-        &self,
-        state: &State,
-        hint: &Hint,
-        new_known_plays: &[CardId],
-        new_known_trash: &[CardId],
-    ) -> Option<HintCategory> {
-        let is_fill_in = new_known_plays
-            .iter()
-            .chain(new_known_trash)
-            .any(|&card_id| self.note(card_id).clued && hint.touched.contains(&card_id));
-
-        if is_fill_in {
-            return Some(HintCategory::FillIn);
+        HintDesc {
+            new_obvious_plays,
+            new_known_trash,
+            new_known_cards,
+            hat_clue: hat_clue(state, hint),
         }
-
-        if let Hinted::Color(_) = hint.hinted {
-            if let Some(target) = self.color_clue_target(state, hint.receiver, &hint.touched) {
-                return Some(HintCategory::RefPlay(target));
-            }
-        } else {
-            // A rank clue giving a known play or fixing (with negative info) a bad touched card
-            // does not mean anything extra
-            let fixed_trash = new_known_trash
-                .iter()
-                .any(|&card_id| self.note(card_id).clued);
-            if !new_known_plays.is_empty() || fixed_trash {
-                return Some(HintCategory::RankAction);
-            }
-
-            if let Some(chop) = self.chop_if_unloaded(state, hint.receiver) {
-                if let Some(target) = self.rank_clue_target(state, hint.receiver, &hint.touched) {
-                    // check if target = chop. if so, it's a lock/8 clue stall
-                    if target == chop {
-                        return if hint.touched.contains(&chop) {
-                            Some(HintCategory::Lock(hint.receiver))
-                        } else if state.board.hints_remaining == state.board.opts.num_hints {
-                            Some(HintCategory::EightClueStall)
-                        } else if self.is_locked(state, state.board.player) {
-                            Some(HintCategory::LockedHandStall)
-                        } else {
-                            Some(HintCategory::Lock(hint.receiver))
-                        };
-                    } else {
-                        return Some(HintCategory::RefDiscard(target));
-                    }
-                }
-            } else if state.board.hints_remaining == state.board.opts.num_hints {
-                return Some(HintCategory::LoadedRankStall);
-            } else if self.is_locked(state, state.board.player) {
-                // TODO: implementt color stalls and unlock promise
-                return Some(HintCategory::LockedHandStall);
-            } else {
-                // TODO: LPC
-                return None;
-            }
-        }
-
-        None
-    }
-
-    fn color_clue_target(
-        &self,
-        state: &State,
-        receiver: Player,
-        touched: &[CardId],
-    ) -> Option<CardId> {
-        let previously_unclued = self.previously_unclued(state, receiver);
-
-        for precedence in 0..previously_unclued.len() {
-            let focus = previously_unclued
-                [previously_unclued.len() - ((precedence + 1) % previously_unclued.len()) - 1];
-            let target = previously_unclued[previously_unclued.len() - precedence - 1];
-
-            if touched.contains(&focus) {
-                return Some(target);
-            }
-        }
-
-        None
-    }
-
-    fn rank_clue_target(
-        &self,
-        state: &State,
-        receiver: Player,
-        touched: &[CardId],
-    ) -> Option<CardId> {
-        let previously_unclued: Vec<CardId> = self.previously_unclued(state, receiver);
-
-        for precedence in 0..previously_unclued.len() {
-            let focus = previously_unclued[previously_unclued.len() - precedence - 1];
-            let target = previously_unclued
-                [previously_unclued.len() - ((precedence + 1) % previously_unclued.len()) - 1];
-
-            // The only time the target can be newly clued is if it's a lock
-            let is_lock = precedence == previously_unclued.len() - 1;
-            if touched.contains(&focus) && (is_lock || !touched.contains(&target)) {
-                return Some(target);
-            }
-        }
-
-        None
-    }
-
-    fn previously_unclued(&self, state: &State, receiver: Player) -> Vec<CardId> {
-        state.hands[receiver]
-            .iter()
-            .copied()
-            .filter(|&card_id| self.unclued(card_id))
-            .collect()
-    }
-
-    fn chop_if_unloaded(&self, state: &State, player: Player) -> Option<CardId> {
-        (!self.is_loaded(state, player) && !self.is_locked(state, player))
-            .then(|| *state.hands[player].last().unwrap())
     }
 
     fn is_loaded(&self, state: &State, player: Player) -> bool {
@@ -293,14 +170,10 @@ impl PublicKnowledge {
             .any(|&card_id| self.note(card_id).is_action())
     }
 
-    fn is_locked(&self, state: &State, player: Player) -> bool {
-        let newest = *state.hands[player].last().unwrap();
-        !self.is_loaded(state, player) && self.note(newest).lock
-    }
-
     pub fn notes(&self) -> Vec<String> {
         self.notes.iter().map(Note::to_string).collect()
     }
+
     /// Returns Ordering::Equal unless one choice is conventionally required over the other
     pub fn compare_conventional_alternatives(
         &self,
@@ -474,24 +347,45 @@ impl PublicKnowledge {
     }
 }
 
+fn hat_clue(state: &State, hint: &Hint) -> QueuedHatClue {
+    let touches_newest = hint
+        .touched
+        .contains(state.hands[hint.receiver].last().unwrap());
+    let hint_value = match (hint.hinted, touches_newest) {
+        (Hinted::Value(_), true) => 1,
+        (Hinted::Value(_), false) => 2,
+        (Hinted::Color(_), false) => 3,
+        (Hinted::Color(_), true) => 4,
+    };
+    let num_players_away = (state.board.opts.num_players + hint.receiver - state.board.player)
+        % state.board.opts.num_players;
+    let last_responder = state.board.player_to_left(state.board.player);
+    if state.board.opts.num_players == 5 && hint.receiver == last_responder {
+        // "Emily clue"
+        QueuedHatClue {
+            remaining_slot_sum: 5,
+            remaining_plays: hint_value % 3,
+            last_responder,
+        }
+    } else {
+        QueuedHatClue {
+            remaining_slot_sum: hint_value,
+            remaining_plays: num_players_away as u8,
+            last_responder,
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, Default)]
 struct Note {
-    clued: bool,
     play: bool,
     trash: bool,
-    /// Has this card ever been given "permission to discard"?
-    ptd: bool,
-    /// If this card is on newest, and the player has no known safe action, then they are locked
-    lock: bool,
+    known: bool,
 }
 
 impl Note {
     fn is_action(&self) -> bool {
-        self.play || self.trash || self.ptd
-    }
-
-    fn unclued(&self) -> bool {
-        !self.clued && !self.play && !self.trash
+        self.play || self.trash
     }
 
     fn is_playable(&self) -> bool {
@@ -503,22 +397,8 @@ impl Note {
 impl Display for Note {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut need_pipe = false;
-        if self.lock {
-            f.write_str("lock ---->")?;
-            need_pipe = true;
-        }
-        if self.ptd {
-            if need_pipe {
-                f.write_str(" | ")?;
-            }
-            f.write_str("ptd")?;
-            need_pipe = true;
-        }
         if self.play {
-            if need_pipe {
-                f.write_str(" | ")?;
-            }
-            f.write_str(if self.clued { "play" } else { "f" })?;
+            f.write_str("f")?;
             need_pipe = true;
         }
         if self.trash {
@@ -533,41 +413,46 @@ impl Display for Note {
 
 #[derive(Clone)]
 pub struct ChoiceDesc {
-    pub gave_ptd: Option<CardId>,
     pub category: ChoiceCategory,
 }
 
 #[derive(Clone)]
 pub enum ChoiceCategory {
-    /// A play that was publicly known to be safe (instructed/good touch)
-    ExpectedPlay(CardId),
-    /// A discard that was publicly known to be safe (trash/ptd)
+    /// A discard that was publicly known to be safe (instructed/obvious)
+    ExpectedPlay,
+    /// A discard that was publicly known to be safe (instructed/obvious)
     ExpectedDiscard,
-    Sacrifice(CardId),
+    /// A play of a fully-known unplayable card
+    KnownMisplay,
+    /// A discard a fully-known non-trash (useful/playable) card
+    KnownDiscard,
+    /// A play of a card that was not publicly instructed prior
+    ///
+    /// Either a response to a hat clue or a player with final freedom demonstrating some private knowledge
+    UnexpectedPlay {
+        slot: u8,
+    },
+    /// A discard of a card that was not publicly instructed prior
+    ///
+    /// Either a response to a hat clue or a player with final freedom demonstrating some private knowledge
+    UnexpectedDiscard {
+        slot: u8,
+    },
     Hint(HintDesc),
+}
+
+enum Reaction {
+    Ignore,
+    Play { slot: u8 },
+    Discard { slot: u8 },
 }
 
 #[derive(Debug, Clone)]
 pub struct HintDesc {
-    new_known_plays: Vec<CardId>,
+    new_obvious_plays: Vec<CardId>,
     new_known_trash: Vec<CardId>,
-    category: HintCategory,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum HintCategory {
-    RefPlay(CardId),
-    RefDiscard(CardId),
-    /// A clue touching new cards means nothing extra if it touches an already clued card and fills it in
-    FillIn,
-    /// A rank clue touching new cards means nothing extra if it gives a previously unknown play
-    RankAction,
-    LockedHandStall,
-    EightClueStall,
-    /// In a stalling situation, a rank clue to a loaded player means nothing extra and does not give PTD
-    /// (Exception: locked hand stalls in 2p)
-    LoadedRankStall,
-    Lock(Player),
+    new_known_cards: Vec<CardId>,
+    hat_clue: QueuedHatClue,
 }
 
 impl ChoiceDesc {
@@ -584,7 +469,7 @@ impl ChoiceDesc {
     fn instructed_misplay(&self, view: &PlayerView<'_>) -> Option<CardId> {
         match self.category {
             ChoiceCategory::Hint(HintDesc {
-                new_known_plays: _,
+                new_obvious_plays: _,
                 new_known_trash: _,
                 category,
             }) => match category {
@@ -625,7 +510,7 @@ impl ChoiceDesc {
     fn is_lock(&self) -> bool {
         match self.category {
             ChoiceCategory::Hint(HintDesc {
-                new_known_plays: _,
+                new_obvious_plays: _,
                 new_known_trash: _,
                 category,
             }) => match category {
@@ -705,7 +590,7 @@ impl HintCategory {
 
 impl HintDesc {
     pub fn new_plays(&self) -> u32 {
-        self.new_known_plays.len() as u32 + self.category.new_plays()
+        self.new_obvious_plays.len() as u32 + self.category.new_plays()
     }
 }
 // Lowest to highest severity

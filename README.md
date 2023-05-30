@@ -1,3 +1,15 @@
+# Referential Sieve Bot
+
+This branch contains a work-in-progress bot for the Referential Sieve conventions.
+
+To test it out for yourself, download the code and the Rust programming language, and run
+
+```
+cargo run --release -- -j my_replay.json -p 2 -g ref_sieve
+```
+
+The documentation for the rest of the repository (which is primarily a hat guessing bot by Jeff Wu) is preserved below:
+
 # Simulations of Hanabi strategies
 
 Hanabi is a cooperative card game of incomplete information.

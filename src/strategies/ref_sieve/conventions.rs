@@ -376,9 +376,12 @@ impl PublicKnowledge {
             }
         }
 
+        let next_player_stacked =
+            self.is_stacked(state, view.board.player_to_right(view.board.player));
+
         if view.board.pace() < view.board.opts.num_players {
             // Give a play to a player who doesn't play about any
-            if !self.is_stacked(state, view.board.player_to_right(view.board.player)) {
+            if !next_player_stacked {
                 match (a.new_plays(), (b.new_plays())) {
                     (1.., 0) => return Ordering::Greater,
                     (0, 1..) => return Ordering::Less,
@@ -398,14 +401,31 @@ impl PublicKnowledge {
                 }
 
                 // Prefer discarding to playing non-urgent cards when partner already has plays
-                if a.is_discard() && b.is_play() {
-                    return Ordering::Greater;
-                }
-                if b.is_discard() && a.is_play() {
-                    return Ordering::Less;
+                if next_player_stacked {
+                    if a.is_discard() && b.is_play() {
+                        return Ordering::Greater;
+                    }
+                    if b.is_discard() && a.is_play() {
+                        return Ordering::Less;
+                    }
                 }
 
+                // let n5 = Compute non-5 plays in partners hand
+                // Assuming I don't have duplicates of any of those,
+                // let fourfive = Compute number of 4/5 plays in my hand
+                //
+
+                // Discarding instead of cluing loses when I could have avoided discarding until the final round
+                // - Either I have a
+
                 // Prefer cluing to discarding if ... TODO
+
+                // At pace 1, clue instead of discarding if
+                // - I might not have any useful 4s or 5s and my partner has a play and there are enough clues to stall
+                // - My partner's hand is empty and there will be enough clues to stall if they draw a good card
+                // - TODO: drawing a 3 into the same hand as its 5
+                //
+                // Enough clues to stall: clue count > (# non-5s to be played in partner's hand)
             }
         }
 
@@ -414,13 +434,6 @@ impl PublicKnowledge {
         // - I can save my play for the final round (it's a 3 and partner doesn't have the 5 or it's a 4) AND
         // - My partner has at least two plays
         // TODO
-
-        // At pace 1, clue instead of discarding if
-        // - I might not have any useful 4s or 5s and my partner has a play and there are enough clues to stall
-        // - My partner's hand is empty and there will be enough clues to stall if they draw a good card
-        // - TODO: drawing a 3 into the same hand as its 5
-        //
-        // Enough clues to stall: clue count > (# non-5s to be played in partner's hand)
 
         Ordering::Equal
 
